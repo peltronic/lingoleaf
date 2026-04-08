@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "LingoLeaf",
+  "version": "0.1.0",
+  "description": "Save highlighted text and page URLs from the context menu.",
+  "permissions": ["contextMenus", "storage"],
+  "host_permissions": ["http://127.0.0.1:11434/*", "http://localhost:11434/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Saved words"
+  }
+}

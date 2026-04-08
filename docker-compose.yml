@@ -1,0 +1,28 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      # Listen on all interfaces so the published port works.
+      OLLAMA_HOST: "0.0.0.0:11434"
+      # Allow browser extensions (Origin: chrome-extension://…) to call the API from pages/popups.
+      OLLAMA_ORIGINS: "chrome-extension://*"
+    volumes:
+      - ollama_models:/root/.ollama
+  model-setup:
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: "ollama:11434"
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      until ollama list >/dev/null 2>&1; do sleep 2; done;
+      ollama pull qwen2.5:3b
+    profiles:
+      - setup
+
+volumes:
+  ollama_models:
