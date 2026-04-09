@@ -1,3 +1,12 @@
+## ⚠️ Alpha Release Disclaimer
+LingoLeaf is currently in **Alpha**. It is an experimental tool under active development. 
+
+* **Hardware Requirements:** Running local LLMs (via Ollama/Docker) requires significant CPU/GPU and RAM. Performance will vary based on your local machine.
+* **Liability:** By using this software, you acknowledge that it is provided "as is." The developers are not responsible for any data loss, system instability, or hardware strain caused by running local models.
+* **No Cloud Connectivity:** While we do not send your data to external servers, you are responsible for securing your own local environment and Docker instances.
+
+---
+
 # LingoLeaf (Alpha)
 
 LingoLeaf is in **early development**. Features and documentation may change between releases.
@@ -6,7 +15,7 @@ LingoLeaf is in **early development**. Features and documentation may change bet
 
 ## 1. What is LingoLeaf?
 
-**LingoLeaf** is a **private, local-first** assistant for capturing French text from the web and seeing a quick **English** gloss—without sending your selections to a cloud translation service. A small Chrome extension saves highlighted text and the page URL; a **local AI** stack (Ollama in Docker) runs on your machine and powers the translation step. Your data stays on your device unless you choose to share it elsewhere.
+**What it is:** A **private, local-first** Chrome extension that saves highlighted **French** text and the page URL, then asks a **local LLM** (Ollama in Docker on your machine) for a quick **English** gloss—without using a cloud translation API for that step. Your data stays on your device unless you choose to share it elsewhere.
 
 ---
 
