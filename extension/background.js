@@ -1,5 +1,7 @@
-const MENU_ID = "save-to-lingolark";
+const MENU_ID = "save-to-lingoleaf";
+const ACTION_MENU_USE_POPUP = "lingoleaf-use-popup-toolbar";
 const STORAGE_KEY = "lingoleafSaved";
+const PANEL_MODE_KEY = "lingoleafPanelMode";
 const TRANSLATE_MAX_CHARS = 2000;
 
 const OLLAMA_BASE = "http://127.0.0.1:11434";
@@ -38,20 +40,78 @@ async function translateToEnglish(text) {
   return content.trim();
 }
 
+/** Serializes menu rebuilds so concurrent removeAll/create races cannot duplicate ids. */
+let contextMenuChain = Promise.resolve();
+
 function registerContextMenu() {
-  chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({
-      id: MENU_ID,
-      title: "Save to LingoLark",
-      contexts: ["selection"]
-    });
-  });
+  contextMenuChain = contextMenuChain
+    .then(
+      () =>
+        new Promise((resolve) => {
+          chrome.contextMenus.removeAll(() => {
+            chrome.contextMenus.create(
+              {
+                id: MENU_ID,
+                title: "Save to LingoLeaf",
+                contexts: ["selection"]
+              },
+              () => {
+                chrome.contextMenus.create(
+                  {
+                    id: ACTION_MENU_USE_POPUP,
+                    title: "Use popup for toolbar icon",
+                    contexts: ["action"]
+                  },
+                  () => resolve()
+                );
+              }
+            );
+          });
+        })
+    )
+    .catch(() => {});
 }
 
-chrome.runtime.onInstalled.addListener(registerContextMenu);
-chrome.runtime.onStartup.addListener(registerContextMenu);
+async function applyPanelMode(mode) {
+  const useSidePanel = mode === "sidepanel";
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: useSidePanel });
+  } catch {
+    /* ignore if API unavailable */
+  }
+  if (useSidePanel) {
+    await chrome.action.setPopup({ popup: "" });
+  } else {
+    await chrome.action.setPopup({ popup: "popup.html" });
+  }
+}
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+async function initPanelMode() {
+  const { [PANEL_MODE_KEY]: stored } = await chrome.storage.local.get(PANEL_MODE_KEY);
+  const mode = stored === "sidepanel" ? "sidepanel" : "popup";
+  await applyPanelMode(mode);
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  registerContextMenu();
+  initPanelMode();
+});
+chrome.runtime.onStartup.addListener(() => {
+  registerContextMenu();
+  initPanelMode();
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message && message.type === "set-panel-mode") {
+    (async () => {
+      const mode = message.mode === "sidepanel" ? "sidepanel" : "popup";
+      await chrome.storage.local.set({ [PANEL_MODE_KEY]: mode });
+      await applyPanelMode(mode);
+      sendResponse({ ok: true });
+    })().catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
   if (!message || message.type !== "backfill-missing-translations") return;
 
   (async () => {
@@ -82,6 +142,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
+  if (info.menuItemId === ACTION_MENU_USE_POPUP) {
+    await chrome.storage.local.set({ [PANEL_MODE_KEY]: "popup" });
+    await applyPanelMode("popup");
+    return;
+  }
+
   if (info.menuItemId !== MENU_ID) return;
 
   const word = (info.selectionText || "").trim();

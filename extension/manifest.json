@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "LingoLeaf",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "A lightweight French-to-English translation assistant powered by local AI",
-  "permissions": ["contextMenus", "storage"],
+  "minimum_chrome_version": "116",
+  "permissions": ["contextMenus", "storage", "sidePanel"],
   "host_permissions": ["http://127.0.0.1:11434/*", "http://localhost:11434/*"],
   "background": {
     "service_worker": "background.js"
@@ -11,5 +12,8 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Saved words"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   }
 }
