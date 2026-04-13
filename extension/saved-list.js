@@ -1,10 +1,15 @@
 const STORAGE_KEY = "lingoleafSaved";
+
+const buildMetaEl = document.getElementById("build-meta");
+
 const statusEl = document.getElementById("status");
 const refreshBtn = document.getElementById("refresh");
 const clearBtn = document.getElementById("clear");
+const lockSideBtn = document.getElementById("lock-side");
+const unlockPopupBtn = document.getElementById("unlock-popup");
 
 function setStatus(text = "") {
-  statusEl.textContent = text;
+  if (statusEl) statusEl.textContent = text;
 }
 
 function formatDate(ts) {
@@ -67,6 +72,29 @@ async function load() {
   render(entries);
 }
 
+async function renderBuildMeta() {
+  if (!buildMetaEl) return;
+  const { version } = chrome.runtime.getManifest();
+  buildMetaEl.replaceChildren();
+  buildMetaEl.appendChild(document.createTextNode(`LingoLeaf v${version}`));
+
+  try {
+    const res = await fetch(chrome.runtime.getURL("build-meta.json"));
+    if (res.ok) {
+      const data = await res.json();
+      const c = data && typeof data.commit === "string" ? data.commit.trim() : "";
+      if (c && c !== "unknown") {
+        buildMetaEl.appendChild(document.createTextNode(" · "));
+        const code = document.createElement("code");
+        code.textContent = c;
+        buildMetaEl.appendChild(code);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 clearBtn.addEventListener("click", async () => {
   await chrome.storage.local.set({ [STORAGE_KEY]: [] });
   setStatus("");
@@ -90,6 +118,39 @@ refreshBtn.addEventListener("click", async () => {
   }
 });
 
+if (lockSideBtn) {
+  lockSideBtn.addEventListener("click", async () => {
+    lockSideBtn.disabled = true;
+    try {
+      const w = await chrome.windows.getCurrent();
+      await chrome.runtime.sendMessage({
+        type: "set-panel-mode",
+        mode: "sidepanel",
+        windowId: w.id
+      });
+      await chrome.sidePanel.open({ windowId: w.id });
+    } catch {
+      setStatus("Could not open side panel.");
+    } finally {
+      lockSideBtn.disabled = false;
+    }
+  });
+}
+
+if (unlockPopupBtn) {
+  unlockPopupBtn.addEventListener("click", async () => {
+    unlockPopupBtn.disabled = true;
+    try {
+      await chrome.runtime.sendMessage({ type: "set-panel-mode", mode: "popup" });
+      setStatus("Toolbar icon now opens the popup again.");
+    } catch {
+      setStatus("Could not switch to popup mode.");
+    } finally {
+      unlockPopupBtn.disabled = false;
+    }
+  });
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes[STORAGE_KEY]) {
     render(changes[STORAGE_KEY].newValue || []);
@@ -97,3 +158,4 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 load();
+renderBuildMeta();

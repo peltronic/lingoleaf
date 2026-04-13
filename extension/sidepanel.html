@@ -3,24 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LingoLeaf — Saved</title>
+    <title>LingoLeaf</title>
     <link rel="stylesheet" href="panel.css" />
   </head>
-  <body>
+  <body class="sidepanel-host">
     <div class="panel-body">
       <h1>Saved to LingoLeaf</h1>
-      <p class="hint">
-        <strong>Side panel:</strong> keeps this list open while you browse. <strong>Popup:</strong> closes when you click away.
-      </p>
+      <p class="hint">This panel stays open while you browse. Use the toolbar icon to show or hide it.</p>
       <div class="toolbar">
         <p id="status"></p>
         <div class="actions">
-          <button type="button" id="lock-side" class="text-icon-btn" title="Open list in Chrome’s side panel (stays open)">
+          <button type="button" id="unlock-popup" class="text-icon-btn" title="Toolbar icon opens the small popup again">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <rect x="5" y="11" width="14" height="10" rx="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              <path d="M7 11V7a5 5 0 0 1 9.9-1" />
             </svg>
-            <span>Side panel</span>
+            <span>Popup mode</span>
           </button>
           <button type="button" id="refresh" title="Fill missing translations">Fill missing</button>
           <button type="button" id="clear" title="Remove all saved items">Clear all</button>

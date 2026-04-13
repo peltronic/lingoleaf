@@ -69,7 +69,9 @@ You should see your model listed. If the list is empty, run step 2 again.
 
 After loading, pin the extension if you like (**Extensions** menu → pin LingoLeaf). Open the toolbar popup to view saved items and use actions such as **Fill missing** when the local engine was offline earlier.
 
-To pick up code changes after editing files, return to `chrome://extensions` and click **Reload** on LingoLeaf.
+To pick up code changes after editing files, return to `chrome://extensions` and click **Reload** on LingoLeaf. There is no separate build step—Chrome reads the files from the **`extension`** folder (the one that contains `manifest.json`) directly.
+
+Optional: run `./scripts/update-build-meta.sh` so the footer shows the current git short hash (stored in `extension/build-meta.json`).
 
 ---
 

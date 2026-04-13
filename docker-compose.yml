@@ -14,13 +14,16 @@ services:
   model-setup:
     image: ollama/ollama:latest
     depends_on:
-      - ollama
+      ollama:
+        condition: service_started
     environment:
-      OLLAMA_HOST: "ollama:11434"
+      # CLI in this container talks to the ollama service (not localhost).
+      OLLAMA_HOST: "http://ollama:11434"
+    # entrypoint sh -c must receive exactly one script argument; a bare string command is
+    # tokenized by Compose, so sh only sees `until` → "expecting do".
     entrypoint: ["/bin/sh", "-c"]
-    command: >
-      until ollama list >/dev/null 2>&1; do sleep 2; done;
-      ollama pull qwen2.5:3b
+    command:
+      - "until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull qwen2.5:3b"
     profiles:
       - setup
 
