@@ -7,6 +7,95 @@ const TRANSLATE_MAX_CHARS = 2000;
 const OLLAMA_BASE = "http://127.0.0.1:11434";
 const OLLAMA_MODEL = "qwen2.5:3b";
 
+/** Selections with at least this many words are split into lexical items before translating. */
+const SEGMENT_MIN_WORDS = 6;
+const SEGMENT_MAX_CHARS = 1500;
+const SEGMENT_MAX_ITEMS = 48;
+
+function countWords(text) {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function shouldSegmentSelection(text) {
+  const t = text.trim();
+  if (!t) return false;
+  if (t.length > SEGMENT_MAX_CHARS) return true;
+  return countWords(t) >= SEGMENT_MIN_WORDS;
+}
+
+function extractJsonStringArray(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  let s = raw.trim();
+  const fence = /^```(?:json)?\s*([\s\S]*?)```$/im.exec(s);
+  if (fence) s = fence[1].trim();
+  try {
+    const parsed = JSON.parse(s);
+    if (!Array.isArray(parsed)) return null;
+    const out = [];
+    for (const x of parsed) {
+      if (typeof x !== "string") continue;
+      const item = x.trim();
+      if (item) out.push(item);
+    }
+    return out.length ? out.slice(0, SEGMENT_MAX_ITEMS) : null;
+  } catch {
+    const start = s.indexOf("[");
+    const end = s.lastIndexOf("]");
+    if (start < 0 || end <= start) return null;
+    try {
+      const parsed = JSON.parse(s.slice(start, end + 1));
+      if (!Array.isArray(parsed)) return null;
+      const out = [];
+      for (const x of parsed) {
+        if (typeof x !== "string") continue;
+        const item = x.trim();
+        if (item) out.push(item);
+      }
+      return out.length ? out.slice(0, SEGMENT_MAX_ITEMS) : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Split longer French text into words and multi-word idioms via local LLM. Returns null on failure.
+ */
+async function segmentIntoLexicalItems(text) {
+  const slice = text.length > SEGMENT_MAX_CHARS ? text.slice(0, SEGMENT_MAX_CHARS) : text;
+
+  const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: OLLAMA_MODEL,
+      messages: [
+        {
+          role: "user",
+          content:
+            "You help French learners build vocabulary. Split the text below into a JSON array of strings ONLY.\n" +
+            "- Keep common French idioms and fixed expressions as one string (e.g. \"à tout prix\", \"en train de\").\n" +
+            "- Otherwise use single words (meaningful tokens; no bare punctuation-only entries).\n" +
+            "- No duplicates. Preserve left-to-right order. Max " +
+            SEGMENT_MAX_ITEMS +
+            " items.\n" +
+            "- Reply with nothing except valid JSON, e.g. [\"mot\", \"expression fixe\", \"autre\"].\n\n" +
+            "Text:\n" +
+            slice
+        }
+      ],
+      stream: false,
+      options: { temperature: 0.1 }
+    })
+  });
+
+  if (!res.ok) return null;
+  const data = await res.json();
+  const content =
+    data && data.message && typeof data.message.content === "string" ? data.message.content : "";
+  return extractJsonStringArray(content);
+}
+
 /**
  * English gloss via local Ollama (Docker). Fails quietly if Ollama is down or the model is missing.
  */
@@ -150,26 +239,45 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
 
   if (info.menuItemId !== MENU_ID) return;
 
-  const word = (info.selectionText || "").trim();
+  const rawSelection = (info.selectionText || "").trim();
   const pageUrl = info.pageUrl || "";
-  if (!word) return;
+  if (!rawSelection) return;
 
-  let translation = "";
-  try {
-    translation = await translateToEnglish(word);
-  } catch {
-    translation = "";
+  let pieces = [rawSelection];
+
+  if (shouldSegmentSelection(rawSelection)) {
+    try {
+      const segmented = await segmentIntoLexicalItems(rawSelection);
+      if (segmented && segmented.length > 0) {
+        pieces = segmented;
+      }
+    } catch {
+      pieces = [rawSelection];
+    }
   }
 
   const { [STORAGE_KEY]: existing = [] } = await chrome.storage.local.get(STORAGE_KEY);
-  const entry = {
-    id: crypto.randomUUID(),
-    word,
-    translation,
-    url: pageUrl,
-    savedAt: Date.now()
-  };
+  const baseTime = Date.now();
+  const newEntries = [];
+
+  for (let i = 0; i < pieces.length; i += 1) {
+    const word = pieces[i];
+    let translation = "";
+    try {
+      translation = await translateToEnglish(word);
+    } catch {
+      translation = "";
+    }
+    newEntries.push({
+      id: crypto.randomUUID(),
+      word,
+      translation,
+      url: pageUrl,
+      savedAt: baseTime + i
+    });
+  }
+
   await chrome.storage.local.set({
-    [STORAGE_KEY]: [entry, ...existing]
+    [STORAGE_KEY]: [...newEntries, ...existing]
   });
 });
