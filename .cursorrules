@@ -1,0 +1,38 @@
+# LingoLeaf Coding + Commenting Rules
+
+## Comment style
+- Use `//` comments only (do not use block comments).
+- Add comments above functions, not inline-by-default.
+- Keep comments short (1-3 lines), practical, and focused on:
+  - what the function does
+  - how it is used
+  - why it exists (user/UX or architectural reason)
+- Prefer intent-level comments over line-by-line logic narration.
+- Avoid obvious comments and avoid restating code syntax.
+
+## Refactoring boundaries
+- Keep `background.js` focused on Chrome extension orchestration:
+  - event listeners
+  - storage reads/writes
+  - mode toggles / context-menu wiring
+- Move pure logic into `extension/lib/` as reusable functions:
+  - text normalization
+  - heuristics/threshold checks
+  - parsing/validation helpers
+- Keep pure helpers deterministic and side-effect free.
+
+## API/service organization
+- Keep network/API calls out of orchestration when possible.
+- Put LLM/API interactions in service modules (e.g. `ollama-api.js`).
+- Keep prompt construction separate from API call plumbing.
+- Store prompt text in named constants/builders, not long inline strings in handlers.
+
+## Data flow conventions
+- Keep save/translate flows resilient:
+  - fail soft and preserve user action where possible
+  - fallback to simpler behavior if segmentation/parsing fails
+- Keep list storage updates explicit and predictable (`chrome.storage.local`).
+
+## UI logic conventions
+- Share UI behavior across popup and sidepanel via common scripts/styles when feasible.
+- Keep markup differences minimal and intentional (mode-specific controls/hints only).
