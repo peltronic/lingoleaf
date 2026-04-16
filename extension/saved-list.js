@@ -1,4 +1,5 @@
 const STORAGE_KEY = "lingoleafSaved";
+const SEGMENTING_KEY = "lingoleafSegmenting";
 
 const buildMetaEl = document.getElementById("build-meta");
 
@@ -20,12 +21,77 @@ function formatDate(ts) {
   }
 }
 
-function render(entries) {
+// Small chain-link icon (source page).
+function createSourceLinkIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p1.setAttribute(
+    "d",
+    "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+  );
+  const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p2.setAttribute(
+    "d",
+    "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+  );
+  svg.appendChild(p1);
+  svg.appendChild(p2);
+  return svg;
+}
+
+function createCloseIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p1.setAttribute("d", "M18 6L6 18");
+  const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p2.setAttribute("d", "M6 6l12 12");
+  svg.appendChild(p1);
+  svg.appendChild(p2);
+  return svg;
+}
+
+function sameEntry(a, b) {
+  if (a.id && b.id) return a.id === b.id;
+  return (
+    a.savedAt === b.savedAt &&
+    a.word === b.word &&
+    (a.url || "") === (b.url || "")
+  );
+}
+
+async function deleteEntry(item) {
+  const { [STORAGE_KEY]: entries = [] } = await chrome.storage.local.get(STORAGE_KEY);
+  const next = entries.filter((e) => !sameEntry(e, item));
+  await chrome.storage.local.set({ [STORAGE_KEY]: next });
+}
+
+function render(entries, showSegmentingBanner) {
   const list = document.getElementById("list");
   const empty = document.getElementById("empty");
+  const banner = document.getElementById("segmenting-banner");
+  if (banner) {
+    banner.hidden = !showSegmentingBanner;
+  }
   list.innerHTML = "";
 
-  if (!entries.length) {
+  if (!entries.length && !showSegmentingBanner) {
     empty.hidden = false;
     return;
   }
@@ -33,27 +99,62 @@ function render(entries) {
 
   for (const item of entries) {
     const li = document.createElement("li");
+    li.className = "entry-card";
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "entry-delete";
+    del.title = "Remove this entry";
+    del.setAttribute("aria-label", "Remove this entry");
+    del.appendChild(createCloseIcon());
+    del.addEventListener("click", () => {
+      void deleteEntry(item);
+    });
+    li.appendChild(del);
+
     const word = document.createElement("div");
     word.className = "word";
     word.textContent = item.word;
 
     const trans = document.createElement("div");
-    trans.className = "translation" + (item.translation ? "" : " muted");
-    trans.textContent = item.translation
-      ? `EN: ${item.translation}`
-      : "Translation unavailable";
+    if (item.translationPending) {
+      trans.className = "translation translation-pending";
+      trans.setAttribute("aria-busy", "true");
+      const spin = document.createElement("span");
+      spin.className = "ll-spinner";
+      spin.setAttribute("aria-hidden", "true");
+      const label = document.createElement("span");
+      label.className = "ll-spinner-label";
+      label.textContent = "Translating…";
+      trans.appendChild(spin);
+      trans.appendChild(label);
+    } else {
+      trans.className = "translation" + (item.translation ? "" : " muted");
+      trans.textContent = item.translation
+        ? `EN: ${item.translation}`
+        : "Translation unavailable";
+    }
 
     const urlRow = document.createElement("div");
-    urlRow.className = "url";
-    const a = document.createElement("a");
-    a.href = item.url || "#";
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    a.textContent = item.url || "(no URL)";
-    if (!item.url) {
-      a.removeAttribute("href");
+    urlRow.className = "source-row";
+    if (item.url) {
+      const a = document.createElement("a");
+      a.className = "source-link";
+      a.href = item.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.title = item.url;
+      a.setAttribute("aria-label", "Open source page in new tab");
+      a.appendChild(createSourceLinkIcon());
+      urlRow.appendChild(a);
+    } else {
+      const span = document.createElement("span");
+      span.className = "source-link-missing";
+      span.title = "No source URL saved";
+      span.setAttribute("aria-label", "No source URL");
+      span.appendChild(createSourceLinkIcon());
+      urlRow.appendChild(span);
     }
-    urlRow.appendChild(a);
 
     const meta = document.createElement("div");
     meta.className = "meta";
@@ -68,8 +169,10 @@ function render(entries) {
 }
 
 async function load() {
-  const { [STORAGE_KEY]: entries = [] } = await chrome.storage.local.get(STORAGE_KEY);
-  render(entries);
+  const data = await chrome.storage.local.get([STORAGE_KEY, SEGMENTING_KEY]);
+  const entries = data[STORAGE_KEY] || [];
+  const showSegmentingBanner = !!(data[SEGMENTING_KEY] && data[SEGMENTING_KEY].active);
+  render(entries, showSegmentingBanner);
 }
 
 async function renderBuildMeta() {
@@ -97,8 +200,9 @@ async function renderBuildMeta() {
 
 clearBtn.addEventListener("click", async () => {
   await chrome.storage.local.set({ [STORAGE_KEY]: [] });
+  await chrome.storage.local.remove(SEGMENTING_KEY).catch(() => {});
   setStatus("");
-  render([]);
+  await load();
 });
 
 refreshBtn.addEventListener("click", async () => {
@@ -152,8 +256,8 @@ if (unlockPopupBtn) {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes[STORAGE_KEY]) {
-    render(changes[STORAGE_KEY].newValue || []);
+  if (area === "local" && (changes[STORAGE_KEY] || changes[SEGMENTING_KEY])) {
+    void load();
   }
 });
 

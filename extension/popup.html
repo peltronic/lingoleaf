@@ -26,6 +26,23 @@
           <button type="button" id="clear" title="Remove all saved items">Clear all</button>
         </div>
       </div>
+      <div
+        id="segmenting-banner"
+        class="segmenting-banner"
+        role="status"
+        aria-live="polite"
+        aria-label="Splitting selection into phrases"
+        hidden
+      >
+        <div class="segmenting-banner-row">
+          <span class="segmenting-banner-text">Processing</span>
+          <span class="segmenting-dots" aria-hidden="true">
+            <span class="segmenting-dot"></span>
+            <span class="segmenting-dot"></span>
+            <span class="segmenting-dot"></span>
+          </span>
+        </div>
+      </div>
       <ul id="list"></ul>
       <p id="empty" class="empty" hidden>No saved words yet. Select text, right-click, choose “Save to LingoLeaf”.</p>
     </div>
