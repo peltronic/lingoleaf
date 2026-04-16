@@ -254,62 +254,6 @@ li.entry-card:last-child {
   }
 }
 
-.segmenting-phase {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 2px;
-  margin-top: 6px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.12em;
-  color: #64748b;
-}
-
-.segmenting-phase-sep {
-  opacity: 0.45;
-  user-select: none;
-}
-
-.segmenting-phase-n {
-  display: inline-block;
-  min-width: 0.65em;
-  text-align: center;
-  opacity: 0.38;
-  font-weight: 500;
-  color: #64748b;
-  animation: segmenting-phase-digit 1.35s ease-in-out infinite;
-}
-
-.segmenting-phase-n[data-n="1"] {
-  animation-delay: 0s;
-}
-
-.segmenting-phase-n[data-n="2"] {
-  animation-delay: 0.45s;
-}
-
-.segmenting-phase-n[data-n="3"] {
-  animation-delay: 0.9s;
-}
-
-@keyframes segmenting-phase-digit {
-  0%,
-  26% {
-    opacity: 1;
-    font-weight: 700;
-    color: #1d4ed8;
-    transform: translateY(-1px);
-  }
-  33%,
-  100% {
-    opacity: 0.38;
-    font-weight: 500;
-    color: #64748b;
-    transform: translateY(0);
-  }
-}
-
 .source-row {
   margin-bottom: 4px;
   display: flex;

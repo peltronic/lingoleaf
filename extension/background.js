@@ -217,6 +217,7 @@ chrome.contextMenus.onClicked.addListener((info) => {
         void translateSavedEntriesInBackground(accumulated).catch(() => {});
         return;
       } catch {
+        // merge/stream or storage failed — keep any rows already built, else save the whole selection as one card; always re-merge list without dup session rows.
         const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY);
         const rest = list.filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId);
         if (accumulated.length) {
