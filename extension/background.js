@@ -1,4 +1,9 @@
-importScripts("lib/segment-utils.js", "lib/prompts.js", "lib/ollama-api.js");
+importScripts(
+  "lib/segment-utils.js",
+  "lib/prompts.js",
+  "lib/ollama-api.js",
+  "lib/segmentation-pipeline.js"
+);
 
 const MENU_ID = "save-to-lingoleaf";
 const ACTION_MENU_USE_POPUP = "lingoleaf-use-popup-toolbar";
@@ -18,8 +23,9 @@ const TRANSLATE_MAX_CHARS = 2000;
 
 const segmentUtils = globalThis.LingoLeafSegmentUtils;
 const ollamaApi = globalThis.LingoLeafOllamaApi;
+const segmentationPipeline = globalThis.LingoLeafSegmentationPipeline;
 
-/** Serializes menu rebuilds so concurrent removeAll/create races cannot duplicate ids. */
+// Serializes menu rebuilds so concurrent removeAll/create races cannot duplicate ids.
 let contextMenuChain = Promise.resolve();
 
 // Rebuilds extension context menus safely; used at install/startup to keep ids consistent across reloads.
@@ -147,39 +153,12 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
 
   if (segmentUtils.shouldSegmentSelection(rawSelection, SEGMENT_CONFIG)) {
     try {
-      // UX goal: when users save sentence-like selections, prefer multiple learnable entries
-      // (words + useful phrases) instead of one long sentence item in the list.
-      // We try a normal split first, then a stricter prompt if needed, and only adopt
-      // segmented output when it meaningfully improves what appears in the vocab UI.
-      let segmented = await ollamaApi.segmentIntoLexicalItems({
+      // When users save sentence-like selections, tokenize in code, merge adjacent tokens with a small model pass, dedupe in code, then translate each piece.
+      pieces = await segmentationPipeline.getLexicalPieces(rawSelection, {
         baseUrl: OLLAMA_BASE,
         model: OLLAMA_MODEL,
-        text: rawSelection,
-        maxChars: SEGMENT_CONFIG.maxChars,
-        maxItems: SEGMENT_CONFIG.maxItems,
-        forceMultiple: false
+        segmentCfg: SEGMENT_CONFIG
       });
-      if (
-        !segmented ||
-        segmented.length === 0 ||
-        segmentUtils.looksLikeUnsplittedSelection(rawSelection, segmented)
-      ) {
-        segmented = await ollamaApi.segmentIntoLexicalItems({
-          baseUrl: OLLAMA_BASE,
-          model: OLLAMA_MODEL,
-          text: rawSelection,
-          maxChars: SEGMENT_CONFIG.maxChars,
-          maxItems: SEGMENT_CONFIG.maxItems,
-          forceMultiple: true
-        });
-      }
-      if (
-        segmented &&
-        segmented.length > 0 &&
-        !segmentUtils.looksLikeUnsplittedSelection(rawSelection, segmented)
-      ) {
-        pieces = segmented;
-      }
     } catch {
       pieces = [rawSelection];
     }

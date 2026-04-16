@@ -7,8 +7,16 @@
   - what the function does
   - how it is used
   - why it exists (user/UX or architectural reason)
+  - (Exception: `extension/lib/` named functions also use Params/Returns lines as in **Lib function contracts** below.)
 - Prefer intent-level comments over line-by-line logic narration.
 - Avoid obvious comments and avoid restating code syntax.
+
+## Lib function contracts (`extension/lib/`)
+- Above every **named** function (including nested helpers), document **inputs** and **return value** using `//` lines.
+- Use explicit labels so it scans quickly, for example:
+  - `// Params: ...` (types or shapes in plain language: string, string[], object fields)
+  - `// Returns: ...` (type + meaning; note `null`, empty string, or thrown errors when relevant)
+- One-line intent summary may precede Params/Returns; keep the whole block compact (avoid JSDoc `/** */`).
 
 ## Refactoring boundaries
 - Keep `background.js` focused on Chrome extension orchestration:

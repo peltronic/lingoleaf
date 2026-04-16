@@ -1,26 +1,39 @@
 (() => {
-  // Builds the segmentation prompt; used by the Ollama API wrapper to request chunked vocabulary items.
-  function buildSegmentPrompt({ text, maxItems, forceMultiple }) {
+  // Builds the Ollama user message that asks for a token partition into short learnable strings (validated later in code).
+  // Params: 
+  //  ~ words — string[]
+  //  ~ French tokens in reading order
+  //  ~ maxItems — max strings in the JSON array the model returns
+  //  ~ maxSpan — max tokens joined per output string.
+  // Returns: string, full prompt body including the serialized token list.
+  function buildMergeConsecutiveWordsPrompt({ words, maxItems, maxSpan }) {
+    const payload = JSON.stringify(words);
     return (
-      "You help French learners build vocabulary from real sentences. Return a JSON array of strings ONLY.\n" +
-      "Goal: keep useful multi-word chunks whenever they represent one learnable unit.\n" +
-      "- Keep idioms, fixed expressions, preposition+verb chunks, and common collocations together.\n" +
-      "- Prefer phrase chunks of 2-5 words when meaningful (not only isolated words).\n" +
-      "- Still include important standalone content words when needed.\n" +
-      "- No duplicates. Preserve left-to-right order. Max " +
+      "You help French learners by grouping adjacent words from a token list into short learnable strings.\n" +
+      "Input: a JSON array of French tokens in reading order (punctuation already removed).\n" +
+      "Output: a JSON array of strings ONLY.\n" +
+      "Rules:\n" +
+      "- Use every input token exactly once, in the same order, with no reordering and no omissions.\n" +
+      "- Each output string is 1 to " +
+      maxSpan +
+      " tokens joined with a single ASCII space.\n" +
+      "- Merge when it clearly helps learning: fixed expressions, verb + clitic (y/en), verb + à/de + infinitive, reflexive se + verb, article or determiner + noun when it is one nominal chunk, common preposition + tightly bound object.\n" +
+      "- Otherwise keep a single token per output string.\n" +
+      "- Copy surface forms from the input exactly (no lemmatization, no translation).\n" +
+      "- At most " +
       maxItems +
-      " items.\n" +
-      "- Exclude punctuation-only tokens and obvious stopword-only fragments.\n" +
-      (forceMultiple
-        ? "- IMPORTANT: do NOT return the whole sentence as one item. Return at least 2 items.\n"
-        : "") +
-      '- Reply with strict JSON only, e.g. ["en train de", "prendre son temps", "rapidement"].\n\n' +
-      "French text:\n" +
-      text
+      " output strings (if that is impossible while covering all tokens, merge more aggressively within the " +
+      maxSpan +
+      "-token cap).\n" +
+      "- Reply with strict JSON only, e.g. [\"il\", \"se peut\", \"que\"].\n\n" +
+      "Tokens:\n" +
+      payload
     );
   }
 
-  // Builds the translation prompt; used for per-item English gloss generation.
+  // Builds the Ollama user message for a single French gloss into English.
+  // Params: text — string, phrase or word to translate (already trimmed upstream when needed).
+  // Returns: string, full prompt body.
   function buildTranslatePrompt({ text }) {
     return (
       "Translate the following text into English. Reply with only the English translation, with no quotes or explanation.\n\n" +
@@ -29,7 +42,7 @@
   }
 
   globalThis.LingoLeafPrompts = {
-    buildSegmentPrompt,
+    buildMergeConsecutiveWordsPrompt,
     buildTranslatePrompt
   };
 })();

@@ -2,7 +2,9 @@
   const prompts = globalThis.LingoLeafPrompts;
   const segmentUtils = globalThis.LingoLeafSegmentUtils;
 
-  // Sends a single non-streaming chat request to Ollama; shared by segmentation and translation calls.
+  // POSTs one non-streaming `/api/chat` request to Ollama.
+  // Params: baseUrl — string, e.g. `http://127.0.0.1:11434`; model — string; content — user message string; temperature — number.
+  // Returns: string, trimmed assistant text, or empty string on failure or missing content.
   async function ollamaChat({ baseUrl, model, content, temperature }) {
     const res = await fetch(`${baseUrl}/api/chat`, {
       method: "POST",
@@ -22,30 +24,26 @@
       : "";
   }
 
-  // Requests lexical segmentation from the model and parses the response into clean string items for storage.
-  async function segmentIntoLexicalItems({
-    baseUrl,
-    model,
-    text,
-    maxChars,
-    maxItems,
-    forceMultiple = false
-  }) {
-    const slice = text.length > maxChars ? text.slice(0, maxChars) : text;
+  // Calls Ollama with the merge prompt and parses a JSON string array from the reply.
+  // Params: baseUrl, model — strings; words — string[] sent to the prompt; maxItems — cap on parsed array length; maxSpan — passed through to the prompt (max tokens per merged string).
+  // Returns: string[] | null, parsed merge groups, or null when JSON parsing fails.
+  async function mergeConsecutiveWordGroups({ baseUrl, model, words, maxItems, maxSpan }) {
     const content = await ollamaChat({
       baseUrl,
       model,
-      content: prompts.buildSegmentPrompt({
-        text: slice,
+      content: prompts.buildMergeConsecutiveWordsPrompt({
+        words,
         maxItems,
-        forceMultiple
+        maxSpan
       }),
       temperature: 0.1
     });
     return segmentUtils.extractJsonStringArray(content, maxItems);
   }
 
-  // Translates one item to English; used in save flow and backfill flow for consistent glossing.
+  // Calls Ollama with the translate prompt for one saved vocabulary string.
+  // Params: baseUrl, model — strings; text — French string; maxChars — max length of text slice sent to the model.
+  // Returns: string, English gloss or empty string when input is blank or the request fails.
   async function translateToEnglish({ baseUrl, model, text, maxChars }) {
     const q = text.trim();
     if (!q) return "";
@@ -59,7 +57,7 @@
   }
 
   globalThis.LingoLeafOllamaApi = {
-    segmentIntoLexicalItems,
+    mergeConsecutiveWordGroups,
     translateToEnglish
   };
 })();
