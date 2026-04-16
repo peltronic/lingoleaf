@@ -67,13 +67,20 @@ function createCloseIcon() {
   return svg;
 }
 
+function urlsFromItem(item) {
+  if (!item || typeof item !== "object") return [];
+  if (Array.isArray(item.urls) && item.urls.length) {
+    return item.urls.filter((u) => typeof u === "string" && u.trim());
+  }
+  if (typeof item.url === "string" && item.url.trim()) return [item.url.trim()];
+  return [];
+}
+
 function sameEntry(a, b) {
   if (a.id && b.id) return a.id === b.id;
-  return (
-    a.savedAt === b.savedAt &&
-    a.word === b.word &&
-    (a.url || "") === (b.url || "")
-  );
+  const urlsA = urlsFromItem(a).slice().sort().join("\n");
+  const urlsB = urlsFromItem(b).slice().sort().join("\n");
+  return a.savedAt === b.savedAt && a.word === b.word && urlsA === urlsB;
 }
 
 async function deleteEntry(item) {
@@ -136,17 +143,21 @@ function render(entries, showSegmentingBanner) {
     }
 
     const urlRow = document.createElement("div");
-    urlRow.className = "source-row";
-    if (item.url) {
-      const a = document.createElement("a");
-      a.className = "source-link";
-      a.href = item.url;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.title = item.url;
-      a.setAttribute("aria-label", "Open source page in new tab");
-      a.appendChild(createSourceLinkIcon());
-      urlRow.appendChild(a);
+    const sourceUrls = urlsFromItem(item);
+    urlRow.className = "source-row" + (sourceUrls.length > 1 ? " source-row-multi" : "");
+    if (sourceUrls.length) {
+      for (let ui = 0; ui < sourceUrls.length; ui += 1) {
+        const href = sourceUrls[ui];
+        const a = document.createElement("a");
+        a.className = "source-link";
+        a.href = href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.title = href;
+        a.setAttribute("aria-label", `Open source page ${ui + 1} of ${sourceUrls.length} in new tab`);
+        a.appendChild(createSourceLinkIcon());
+        urlRow.appendChild(a);
+      }
     } else {
       const span = document.createElement("span");
       span.className = "source-link-missing";

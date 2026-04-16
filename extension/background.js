@@ -110,22 +110,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     let filledCount = 0;
 
     for (const item of existing) {
-      if (item && item.word && !item.translation) {
+      if (!item || typeof item !== "object") continue;
+      const row = segmentUtils.normalizeEntryUrls(item);
+      if (row && row.word && !row.translation) {
         let translation = "";
         try {
           translation = await ollamaApi.translateToEnglish({
             baseUrl: OLLAMA_BASE,
             model: OLLAMA_MODEL,
-            text: item.word,
+            text: row.word,
             maxChars: TRANSLATE_MAX_CHARS
           });
         } catch {
           translation = "";
         }
         if (translation) filledCount += 1;
-        updated.push({ ...item, translation, translationPending: false });
+        updated.push({ ...row, translation, translationPending: false });
       } else {
-        updated.push(item);
+        updated.push(row);
       }
     }
 
@@ -155,7 +157,11 @@ async function translateSavedEntriesInBackground(entries) {
     const idx = list.findIndex((e) => e && e.id === entry.id);
     if (idx < 0) continue;
     const copy = [...list];
-    copy[idx] = { ...copy[idx], translation, translationPending: false };
+    copy[idx] = segmentUtils.normalizeEntryUrls({
+      ...copy[idx],
+      translation,
+      translationPending: false
+    });
     await chrome.storage.local.set({ [STORAGE_KEY]: copy });
   }
 }
@@ -178,53 +184,83 @@ chrome.contextMenus.onClicked.addListener((info) => {
     const { [STORAGE_KEY]: existing = [] } = await chrome.storage.local.get(STORAGE_KEY);
     const baseTime = Date.now();
 
-    const buildEntry = (word, idx, saveSessionId) => ({
+    // Same normalized French as an existing row → only append `pageUrl` to that row’s `urls`; otherwise a new list item (no post-pass merge).
+    const buildEntry = (word, ordinal, saveSessionId) => ({
       id: crypto.randomUUID(),
-      word,
+      word: String(word || "").trim(),
       translation: "",
       translationPending: true,
-      url: pageUrl,
-      savedAt: baseTime + idx,
+      urls: pageUrl ? [pageUrl.trim()] : [],
+      savedAt: baseTime + ordinal,
       ...(saveSessionId ? { saveSessionId } : {})
     });
 
     if (segmentUtils.shouldSegmentSelection(rawSelection, SEGMENT_CONFIG)) {
       const saveSessionId = crypto.randomUUID();
       const accumulated = [];
-      const persistSessionBatch = async () => {
-        const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY);
-        const rest = list.filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId);
-        await chrome.storage.local.set({
-          [STORAGE_KEY]: [...accumulated, ...rest]
-        });
-      };
+      let newOrdinal = 0;
+      let clearedSegmentingBanner = false;
 
       await chrome.storage.local.set({ [SEGMENTING_KEY]: { active: true } });
       try {
-        let idx = 0;
         for await (const word of segmentationPipeline.streamLexicalPieces(rawSelection, {
           baseUrl: OLLAMA_BASE,
           model: OLLAMA_MODEL,
           segmentCfg: SEGMENT_CONFIG
         })) {
-          accumulated.push(buildEntry(word, idx, saveSessionId));
-          idx += 1;
-          await persistSessionBatch();
-          if (accumulated.length === 1) {
+          // Each chunk: search in-flight batch then older rows — update `urls` in place on hit; only `buildEntry` when truly new.
+          const { [STORAGE_KEY]: fullList = [] } = await chrome.storage.local.get(STORAGE_KEY);
+          const normalized = fullList.map((e) => segmentUtils.normalizeEntryUrls(e));
+          const rest = normalized.filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId);
+          const acc = accumulated.map((e) => segmentUtils.normalizeEntryUrls(e));
+
+          const wi = segmentUtils.findEntryIndexByNormalizedWord(acc, word);
+          if (wi >= 0) {
+            acc[wi] = {
+              ...acc[wi],
+              urls: segmentUtils.mergePageUrlIntoUrls(segmentUtils.urlsFromEntry(acc[wi]), pageUrl)
+            };
+            accumulated.length = 0;
+            accumulated.push(...acc);
+          } else {
+            const ri = segmentUtils.findEntryIndexByNormalizedWord(rest, word);
+            if (ri >= 0) {
+              rest[ri] = {
+                ...rest[ri],
+                urls: segmentUtils.mergePageUrlIntoUrls(segmentUtils.urlsFromEntry(rest[ri]), pageUrl)
+              };
+              accumulated.length = 0;
+              accumulated.push(...acc);
+            } else {
+              acc.push(buildEntry(word, newOrdinal, saveSessionId));
+              newOrdinal += 1;
+              accumulated.length = 0;
+              accumulated.push(...acc);
+            }
+          }
+
+          await chrome.storage.local.set({
+            [STORAGE_KEY]: [...accumulated, ...rest]
+          });
+          if (!clearedSegmentingBanner) {
             await chrome.storage.local.remove(SEGMENTING_KEY);
+            clearedSegmentingBanner = true;
           }
         }
         void translateSavedEntriesInBackground(accumulated).catch(() => {});
         return;
       } catch {
-        // merge/stream or storage failed — keep any rows already built, else save the whole selection as one card; always re-merge list without dup session rows.
+        // TL;DR: merge/stream or storage failed — keep any rows already built, else save the whole selection as one card; always re-merge list without dup session rows.
         const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY);
-        const rest = list.filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId);
+        const rest = list
+          .map((e) => segmentUtils.normalizeEntryUrls(e))
+          .filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId);
         if (accumulated.length) {
+          const acc = accumulated.map((e) => segmentUtils.normalizeEntryUrls(e));
           await chrome.storage.local.set({
-            [STORAGE_KEY]: [...accumulated, ...rest]
+            [STORAGE_KEY]: [...acc, ...rest]
           });
-          void translateSavedEntriesInBackground(accumulated).catch(() => {});
+          void translateSavedEntriesInBackground(acc).catch(() => {});
         } else {
           const fb = buildEntry(rawSelection, 0, saveSessionId);
           await chrome.storage.local.set({
@@ -238,12 +274,24 @@ chrome.contextMenus.onClicked.addListener((info) => {
       }
     }
 
-    const newEntries = [buildEntry(rawSelection, 0)];
+    const normalizedExisting = existing.map((e) => segmentUtils.normalizeEntryUrls(e));
+    const dupIdx = segmentUtils.findEntryIndexByNormalizedWord(normalizedExisting, rawSelection);
+    // Short selection: merge URL onto the matching row, or prepend one new row (same upsert idea as the segmented loop).
+    if (dupIdx >= 0) {
+      const copy = [...normalizedExisting];
+      copy[dupIdx] = {
+        ...copy[dupIdx],
+        urls: segmentUtils.mergePageUrlIntoUrls(segmentUtils.urlsFromEntry(copy[dupIdx]), pageUrl)
+      };
+      await chrome.storage.local.set({ [STORAGE_KEY]: copy });
+      return;
+    }
 
+    const entry = buildEntry(rawSelection, 0);
     await chrome.storage.local.set({
-      [STORAGE_KEY]: [...newEntries, ...existing]
+      [STORAGE_KEY]: [entry, ...normalizedExisting]
     });
 
-    void translateSavedEntriesInBackground(newEntries).catch(() => {});
+    void translateSavedEntriesInBackground([entry]).catch(() => {});
   })().catch(() => {});
 });

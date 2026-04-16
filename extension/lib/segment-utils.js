@@ -96,6 +96,59 @@
     return out;
   }
 
+  // Reads source URLs from a saved row; supports legacy single `url` string or `urls` array.
+  // Params: entry — object from storage (may be legacy shape).
+  // Returns: string[], trimmed http(s) URLs in stored order, deduped.
+  function urlsFromEntry(entry) {
+    if (!entry || typeof entry !== "object") return [];
+    if (Array.isArray(entry.urls)) {
+      const out = [];
+      const seen = new Set();
+      for (const u of entry.urls) {
+        if (typeof u !== "string") continue;
+        const t = u.trim();
+        if (!t || seen.has(t)) continue;
+        seen.add(t);
+        out.push(t);
+      }
+      if (out.length) return out;
+    }
+    if (typeof entry.url === "string" && entry.url.trim()) return [entry.url.trim()];
+    return [];
+  }
+
+  // Builds the next `urls` array for an existing row when the learner saves the same phrase from another page (caller writes the row back).
+  // Params: urls — string[]; pageUrl — string (may be empty).
+  // Returns: string[], new array (never mutates `urls`).
+  function mergePageUrlIntoUrls(urls, pageUrl) {
+    const base = Array.isArray(urls) ? urlsFromEntry({ urls }) : [];
+    if (!pageUrl || typeof pageUrl !== "string" || !pageUrl.trim()) return base;
+    const u = pageUrl.trim();
+    if (base.includes(u)) return base.slice();
+    return [...base, u];
+  }
+
+  // Normalizes a stored row to `{ …, urls }` and drops legacy `url` so new writes stay consistent.
+  // Params: entry — object from storage.
+  // Returns: object, same row with `urls` array and without `url`.
+  function normalizeEntryUrls(entry) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+    const urls = urlsFromEntry(entry);
+    const { url, ...rest } = entry;
+    return { ...rest, urls };
+  }
+
+  // Finds a row index for save-time upsert: same normalized French as `word` means merge `urls`, not append a duplicate row.
+  // Params: entries — object[]; word — string.
+  // Returns: number index, or -1.
+  function findEntryIndexByNormalizedWord(entries, word) {
+    const k = normalizeForCompare(String(word || "").trim());
+    if (!k) return -1;
+    return entries.findIndex(
+      (e) => e && typeof e.word === "string" && normalizeForCompare(e.word.trim()) === k
+    );
+  }
+
   // Drops later duplicates using normalizeForCompare keys while preserving first-seen order and surface spelling.
   // Params: segments — string[].
   // Returns: string[], subset of segments with unique normalized keys.
@@ -188,6 +241,10 @@
     tokenizeSelectionToWords,
     materializeWordPartitionOrNull,
     dedupeSegmentsPreserveOrder,
+    urlsFromEntry,
+    mergePageUrlIntoUrls,
+    normalizeEntryUrls,
+    findEntryIndexByNormalizedWord,
     extractMergeNextLeadCount,
     extractJsonStringArray
   };
