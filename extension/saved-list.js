@@ -1,4 +1,5 @@
 const STORAGE_KEY = "lingoleafSaved";
+const SEGMENTING_KEY = "lingoleafSegmenting";
 
 const buildMetaEl = document.getElementById("build-meta");
 
@@ -20,7 +21,7 @@ function formatDate(ts) {
   }
 }
 
-/** Small chain-link icon (source page). */
+// Small chain-link icon (source page).
 function createSourceLinkIcon() {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("width", "16");
@@ -81,12 +82,16 @@ async function deleteEntry(item) {
   await chrome.storage.local.set({ [STORAGE_KEY]: next });
 }
 
-function render(entries) {
+function render(entries, showSegmentingBanner) {
   const list = document.getElementById("list");
   const empty = document.getElementById("empty");
+  const banner = document.getElementById("segmenting-banner");
+  if (banner) {
+    banner.hidden = !showSegmentingBanner;
+  }
   list.innerHTML = "";
 
-  if (!entries.length) {
+  if (!entries.length && !showSegmentingBanner) {
     empty.hidden = false;
     return;
   }
@@ -112,10 +117,23 @@ function render(entries) {
     word.textContent = item.word;
 
     const trans = document.createElement("div");
-    trans.className = "translation" + (item.translation ? "" : " muted");
-    trans.textContent = item.translation
-      ? `EN: ${item.translation}`
-      : "Translation unavailable";
+    if (item.translationPending) {
+      trans.className = "translation translation-pending";
+      trans.setAttribute("aria-busy", "true");
+      const spin = document.createElement("span");
+      spin.className = "ll-spinner";
+      spin.setAttribute("aria-hidden", "true");
+      const label = document.createElement("span");
+      label.className = "ll-spinner-label";
+      label.textContent = "Translating…";
+      trans.appendChild(spin);
+      trans.appendChild(label);
+    } else {
+      trans.className = "translation" + (item.translation ? "" : " muted");
+      trans.textContent = item.translation
+        ? `EN: ${item.translation}`
+        : "Translation unavailable";
+    }
 
     const urlRow = document.createElement("div");
     urlRow.className = "source-row";
@@ -151,8 +169,10 @@ function render(entries) {
 }
 
 async function load() {
-  const { [STORAGE_KEY]: entries = [] } = await chrome.storage.local.get(STORAGE_KEY);
-  render(entries);
+  const data = await chrome.storage.local.get([STORAGE_KEY, SEGMENTING_KEY]);
+  const entries = data[STORAGE_KEY] || [];
+  const showSegmentingBanner = !!(data[SEGMENTING_KEY] && data[SEGMENTING_KEY].active);
+  render(entries, showSegmentingBanner);
 }
 
 async function renderBuildMeta() {
@@ -180,8 +200,9 @@ async function renderBuildMeta() {
 
 clearBtn.addEventListener("click", async () => {
   await chrome.storage.local.set({ [STORAGE_KEY]: [] });
+  await chrome.storage.local.remove(SEGMENTING_KEY).catch(() => {});
   setStatus("");
-  render([]);
+  await load();
 });
 
 refreshBtn.addEventListener("click", async () => {
@@ -235,8 +256,8 @@ if (unlockPopupBtn) {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes[STORAGE_KEY]) {
-    render(changes[STORAGE_KEY].newValue || []);
+  if (area === "local" && (changes[STORAGE_KEY] || changes[SEGMENTING_KEY])) {
+    void load();
   }
 });
 

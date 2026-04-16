@@ -112,6 +112,34 @@
     return out;
   }
 
+  // Parses `{"count":N}` from incremental merge replies; count must be an integer from 1 through maxSpan.
+  // Params: raw — string, model body; maxSpan — number, upper bound for count (e.g. 3).
+  // Returns: integer count, or null when parsing fails or count is out of range.
+  function extractMergeNextLeadCount(raw, maxSpan) {
+    if (!raw || typeof raw !== "string") return null;
+    let s = raw.trim();
+    const fence = /^```(?:json)?\s*([\s\S]*?)```$/im.exec(s);
+    if (fence) s = fence[1].trim();
+    const parseObj = (jsonStr) => {
+      try {
+        const o = JSON.parse(jsonStr);
+        if (!o || typeof o !== "object" || Array.isArray(o)) return null;
+        const c = o.count;
+        if (typeof c !== "number" || !Number.isInteger(c)) return null;
+        if (c < 1 || c > maxSpan) return null;
+        return c;
+      } catch {
+        return null;
+      }
+    };
+    let c = parseObj(s);
+    if (c != null) return c;
+    const start = s.indexOf("{");
+    const end = s.lastIndexOf("}");
+    if (start >= 0 && end > start) c = parseObj(s.slice(start, end + 1));
+    return c;
+  }
+
   // Parses a top-level JSON array of strings from model output; tolerates markdown fences and trailing junk outside the array.
   // Params: raw — string, raw model body; maxItems — max entries kept from the parsed array.
   // Returns: string[] when at least one string parses; otherwise null.
@@ -160,6 +188,7 @@
     tokenizeSelectionToWords,
     materializeWordPartitionOrNull,
     dedupeSegmentsPreserveOrder,
+    extractMergeNextLeadCount,
     extractJsonStringArray
   };
 })();

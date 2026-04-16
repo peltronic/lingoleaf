@@ -24,21 +24,21 @@
       : "";
   }
 
-  // Calls Ollama with the merge prompt and parses a JSON string array from the reply.
-  // Params: baseUrl, model — strings; words — string[] sent to the prompt; maxItems — cap on parsed array length; maxSpan — passed through to the prompt (max tokens per merged string).
-  // Returns: string[] | null, parsed merge groups, or null when JSON parsing fails.
-  async function mergeConsecutiveWordGroups({ baseUrl, model, words, maxItems, maxSpan }) {
+  // Asks how many leading tokens in `words` to merge next; used once per segment in the streaming merge pipeline.
+  // Params: baseUrl, model — strings; words — non-empty string[] (lookahead window); maxSpan — cap for returned count (e.g. 3).
+  // Returns: integer from 1 to min(maxSpan, words.length); defaults to 1 when the model output does not parse.
+  async function mergeNextSegmentLead({ baseUrl, model, words, maxSpan }) {
+    if (!words || !words.length) return 1;
     const content = await ollamaChat({
       baseUrl,
       model,
-      content: prompts.buildMergeConsecutiveWordsPrompt({
-        words,
-        maxItems,
-        maxSpan
-      }),
+      content: prompts.buildMergeNextSegmentPrompt({ words, maxSpan }),
       temperature: 0.1
     });
-    return segmentUtils.extractJsonStringArray(content, maxItems);
+    const parsed = segmentUtils.extractMergeNextLeadCount(content, maxSpan);
+    const cap = Math.min(maxSpan, words.length);
+    if (parsed == null) return 1;
+    return Math.min(Math.max(1, parsed), cap);
   }
 
   // Calls Ollama with the translate prompt for one saved vocabulary string.
@@ -57,7 +57,7 @@
   }
 
   globalThis.LingoLeafOllamaApi = {
-    mergeConsecutiveWordGroups,
+    mergeNextSegmentLead,
     translateToEnglish
   };
 })();

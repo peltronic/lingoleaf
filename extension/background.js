@@ -8,6 +8,7 @@ importScripts(
 const MENU_ID = "save-to-lingoleaf";
 const ACTION_MENU_USE_POPUP = "lingoleaf-use-popup-toolbar";
 const STORAGE_KEY = "lingoleafSaved";
+const SEGMENTING_KEY = "lingoleafSegmenting";
 const PANEL_MODE_KEY = "lingoleafPanelMode";
 
 const OLLAMA_BASE = "http://127.0.0.1:11434";
@@ -122,7 +123,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           translation = "";
         }
         if (translation) filledCount += 1;
-        updated.push({ ...item, translation });
+        updated.push({ ...item, translation, translationPending: false });
       } else {
         updated.push(item);
       }
@@ -135,62 +136,113 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-// Handles context menu saves: optional segmentation, per-item translation, then prepend entries to storage.
-chrome.contextMenus.onClicked.addListener(async (info) => {
-  if (info.menuItemId === ACTION_MENU_USE_POPUP) {
-    await chrome.storage.local.set({ [PANEL_MODE_KEY]: "popup" });
-    await applyPanelMode("popup");
-    return;
-  }
-
-  if (info.menuItemId !== MENU_ID) return;
-
-  const rawSelection = (info.selectionText || "").trim();
-  const pageUrl = info.pageUrl || "";
-  if (!rawSelection) return;
-
-  let pieces = [rawSelection];
-
-  if (segmentUtils.shouldSegmentSelection(rawSelection, SEGMENT_CONFIG)) {
-    try {
-      // When users save sentence-like selections, tokenize in code, merge adjacent tokens with a small model pass, dedupe in code, then translate each piece.
-      pieces = await segmentationPipeline.getLexicalPieces(rawSelection, {
-        baseUrl: OLLAMA_BASE,
-        model: OLLAMA_MODEL,
-        segmentCfg: SEGMENT_CONFIG
-      });
-    } catch {
-      pieces = [rawSelection];
-    }
-  }
-
-  const { [STORAGE_KEY]: existing = [] } = await chrome.storage.local.get(STORAGE_KEY);
-  const baseTime = Date.now();
-  const newEntries = [];
-
-  for (let i = 0; i < pieces.length; i += 1) {
-    const word = pieces[i];
+// Writes each row’s English gloss by id; one Ollama request per row (not batched). Runs after the list is saved so the UI can show French first.
+async function translateSavedEntriesInBackground(entries) {
+  for (const entry of entries) {
+    if (!entry || !entry.id || !entry.word) continue;
     let translation = "";
     try {
       translation = await ollamaApi.translateToEnglish({
         baseUrl: OLLAMA_BASE,
         model: OLLAMA_MODEL,
-        text: word,
+        text: entry.word,
         maxChars: TRANSLATE_MAX_CHARS
       });
     } catch {
       translation = "";
     }
-    newEntries.push({
+    const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY);
+    const idx = list.findIndex((e) => e && e.id === entry.id);
+    if (idx < 0) continue;
+    const copy = [...list];
+    copy[idx] = { ...copy[idx], translation, translationPending: false };
+    await chrome.storage.local.set({ [STORAGE_KEY]: copy });
+  }
+}
+
+// Handles context menu saves: optional segmentation, prepend rows with pending translations, then translate each row in the background.
+chrome.contextMenus.onClicked.addListener((info) => {
+  void (async () => {
+    if (info.menuItemId === ACTION_MENU_USE_POPUP) {
+      await chrome.storage.local.set({ [PANEL_MODE_KEY]: "popup" });
+      await applyPanelMode("popup");
+      return;
+    }
+
+    if (info.menuItemId !== MENU_ID) return;
+
+    const rawSelection = (info.selectionText || "").trim();
+    const pageUrl = info.pageUrl || "";
+    if (!rawSelection) return;
+
+    const { [STORAGE_KEY]: existing = [] } = await chrome.storage.local.get(STORAGE_KEY);
+    const baseTime = Date.now();
+
+    const buildEntry = (word, idx, saveSessionId) => ({
       id: crypto.randomUUID(),
       word,
-      translation,
+      translation: "",
+      translationPending: true,
       url: pageUrl,
-      savedAt: baseTime + i
+      savedAt: baseTime + idx,
+      ...(saveSessionId ? { saveSessionId } : {})
     });
-  }
 
-  await chrome.storage.local.set({
-    [STORAGE_KEY]: [...newEntries, ...existing]
-  });
+    if (segmentUtils.shouldSegmentSelection(rawSelection, SEGMENT_CONFIG)) {
+      const saveSessionId = crypto.randomUUID();
+      const accumulated = [];
+      const persistSessionBatch = async () => {
+        const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY);
+        const rest = list.filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId);
+        await chrome.storage.local.set({
+          [STORAGE_KEY]: [...accumulated, ...rest]
+        });
+      };
+
+      await chrome.storage.local.set({ [SEGMENTING_KEY]: { active: true } });
+      try {
+        let idx = 0;
+        for await (const word of segmentationPipeline.streamLexicalPieces(rawSelection, {
+          baseUrl: OLLAMA_BASE,
+          model: OLLAMA_MODEL,
+          segmentCfg: SEGMENT_CONFIG
+        })) {
+          accumulated.push(buildEntry(word, idx, saveSessionId));
+          idx += 1;
+          await persistSessionBatch();
+          if (accumulated.length === 1) {
+            await chrome.storage.local.remove(SEGMENTING_KEY);
+          }
+        }
+        void translateSavedEntriesInBackground(accumulated).catch(() => {});
+        return;
+      } catch {
+        const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY);
+        const rest = list.filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId);
+        if (accumulated.length) {
+          await chrome.storage.local.set({
+            [STORAGE_KEY]: [...accumulated, ...rest]
+          });
+          void translateSavedEntriesInBackground(accumulated).catch(() => {});
+        } else {
+          const fb = buildEntry(rawSelection, 0, saveSessionId);
+          await chrome.storage.local.set({
+            [STORAGE_KEY]: [fb, ...rest]
+          });
+          void translateSavedEntriesInBackground([fb]).catch(() => {});
+        }
+        return;
+      } finally {
+        await chrome.storage.local.remove(SEGMENTING_KEY).catch(() => {});
+      }
+    }
+
+    const newEntries = [buildEntry(rawSelection, 0)];
+
+    await chrome.storage.local.set({
+      [STORAGE_KEY]: [...newEntries, ...existing]
+    });
+
+    void translateSavedEntriesInBackground(newEntries).catch(() => {});
+  })().catch(() => {});
 });

@@ -160,6 +160,156 @@ li.entry-card:last-child {
   font-style: italic;
 }
 
+.translation-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-style: normal;
+  color: #525252;
+}
+
+.ll-spinner {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #e5e5e5;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: ll-spin 0.65s linear infinite;
+}
+
+.ll-spinner-label {
+  font-size: 12px;
+  color: #737373;
+}
+
+@keyframes ll-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.segmenting-banner {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #eff6ff 0%, #e0ecfc 100%);
+  border: 1px solid #bfdbfe;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.06);
+}
+
+.segmenting-banner-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e40af;
+}
+
+.segmenting-banner-text {
+  letter-spacing: 0.02em;
+}
+
+.segmenting-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 1em;
+}
+
+.segmenting-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #93c5fd;
+  opacity: 0.35;
+  transform: scale(0.75);
+  animation: segmenting-dot-wave 1.05s ease-in-out infinite;
+}
+
+.segmenting-dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.segmenting-dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.segmenting-dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes segmenting-dot-wave {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.75);
+    background: #93c5fd;
+  }
+  33% {
+    opacity: 1;
+    transform: scale(1.1);
+    background: #2563eb;
+  }
+}
+
+.segmenting-phase {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em;
+  color: #64748b;
+}
+
+.segmenting-phase-sep {
+  opacity: 0.45;
+  user-select: none;
+}
+
+.segmenting-phase-n {
+  display: inline-block;
+  min-width: 0.65em;
+  text-align: center;
+  opacity: 0.38;
+  font-weight: 500;
+  color: #64748b;
+  animation: segmenting-phase-digit 1.35s ease-in-out infinite;
+}
+
+.segmenting-phase-n[data-n="1"] {
+  animation-delay: 0s;
+}
+
+.segmenting-phase-n[data-n="2"] {
+  animation-delay: 0.45s;
+}
+
+.segmenting-phase-n[data-n="3"] {
+  animation-delay: 0.9s;
+}
+
+@keyframes segmenting-phase-digit {
+  0%,
+  26% {
+    opacity: 1;
+    font-weight: 700;
+    color: #1d4ed8;
+    transform: translateY(-1px);
+  }
+  33%,
+  100% {
+    opacity: 0.38;
+    font-weight: 500;
+    color: #64748b;
+    transform: translateY(0);
+  }
+}
+
 .source-row {
   margin-bottom: 4px;
   display: flex;
