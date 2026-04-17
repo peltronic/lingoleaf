@@ -1,7 +1,10 @@
 ;(() => {
   // Builds the Ollama user message for one merge decision at the start of a token window (incremental merge).
-  // Params: words — string[], lookahead slice whose first element is the only merge anchor; maxSpan — max tokens the model may return in count.
-  // Returns: string, full prompt body including the serialized token list.
+  // Input:
+  //   words — string[], lookahead slice whose first element is the only merge anchor.
+  //   maxSpan — number, max tokens the model may return in count.
+  // Output:
+  //   string, full prompt body including the serialized token list.
   function buildMergeNextSegmentPrompt({ words, maxSpan }) {
     const payload = JSON.stringify(words)
     return (
@@ -23,8 +26,10 @@
   }
 
   // Builds the Ollama user message for a single French gloss into English.
-  // Params: text — string, phrase or word to translate (already trimmed upstream when needed).
-  // Returns: string, full prompt body.
+  // Input:
+  //   text — string, phrase or word to translate (already trimmed upstream when needed).
+  // Output:
+  //   string, full prompt body.
   function buildTranslatePrompt({ text }) {
     return (
       "Translate the following text into English. Reply with only the English translation, with no quotes or explanation.\n\n" +

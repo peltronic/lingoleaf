@@ -6,8 +6,12 @@
   const MERGE_LOOKAHEAD = 12
 
   // Caps the token list by count and by approximate JSON length so merge prompts stay bounded.
-  // Params: words — string[]; maxItems — number from segment config; maxChars — number, max JSON length for the clipped array.
-  // Returns: string[], prefix of words (possibly shortened until JSON fits).
+  // Input:
+  //   words — string[].
+  //   maxItems — number from segment config.
+  //   maxChars — number, max JSON length for the clipped array.
+  // Output:
+  //   string[], prefix of words (possibly shortened until JSON fits).
   function clipWordsForMerge(words, maxItems, maxChars) {
     const spanCap = maxItems * MERGE_MAX_SPAN
     let clipped =
@@ -19,8 +23,11 @@
   }
 
   // Yields each merged or single-token surface string as soon as it is decided (one Ollama call per yield, except single-token inputs).
-  // Params: rawSelection — string; second arg — `{ baseUrl, model, segmentCfg }` with maxItems and maxChars on segmentCfg.
-  // Yields: string, French phrase or word in reading order (yields rawSelection when tokenization is empty).
+  // Input:
+  //   rawSelection — string.
+  //   opts — `{ baseUrl, model, segmentCfg }` with maxItems and maxChars on segmentCfg.
+  // Output:
+  //   async generator yields string, French phrase or word in reading order (yields rawSelection when tokenization is empty).
   async function* streamLexicalPieces(
     rawSelection,
     { baseUrl, model, segmentCfg },
@@ -80,8 +87,11 @@
   }
 
   // Collects the async generator into an array for callers that need the full list at once.
-  // Params: rawSelection — string; opts — same object as streamLexicalPieces.
-  // Returns: Promise<string[]>, never empty (falls back to `[rawSelection]`).
+  // Input:
+  //   rawSelection — string.
+  //   opts — same object as streamLexicalPieces.
+  // Output:
+  //   Promise<string[]>, never empty (falls back to `[rawSelection]`).
   async function getLexicalPieces(rawSelection, opts) {
     const out = []
     for await (const piece of streamLexicalPieces(rawSelection, opts))
