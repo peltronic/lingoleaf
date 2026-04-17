@@ -44,3 +44,10 @@
 ## UI logic conventions
 - Share UI behavior across popup and sidepanel via common scripts/styles when feasible.
 - Keep markup differences minimal and intentional (mode-specific controls/hints only).
+
+## JavaScript style
+- Do not use semicolons at end-of-line in JavaScript, ever (omit `;` after statements).
+
+## Agent workflow (git + prompts)
+- Before running git commands that may **update the working tree**, **reset/revert** files, or **create commits**, confirm the current **branch** (and intended ref) and prefer giving the user exact commands to run themselves unless they asked the agent to run git.
+- When a prompt is **ambiguous or underspecified** for implementation, **ask clarifying questions before** making code or file changes.
