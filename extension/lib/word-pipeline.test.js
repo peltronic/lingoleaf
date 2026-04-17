@@ -1,8 +1,11 @@
 "use strict"
 
+// Debug: use `test.only` / `describe.only`, then `yarn test` (uses `--test-only`). Before commit, remove `.only` and run `yarn test:all` for the full suite.
+
 const assert = require("node:assert/strict")
 const { describe, test } = require("node:test")
 
+require("./segment-utils.js")
 require("./word-pipeline.js")
 const { parseTokens, identifyIdioms, translate } =
   globalThis.LingoLeafWordPipeline
@@ -44,20 +47,56 @@ describe("parseTokens", () => {
 })
 
 describe("identifyIdioms", () => {
-  test("noop preserves words and returns new array and new objects", () => {
+  test("merge count 1 preserves words and returns new rows matching parseTokens shape", async () => {
     const a = parseTokens("un deux")
-    const b = identifyIdioms(a)
+    const b = await identifyIdioms(a, {
+      mergeNextSegmentLead: async () => 1,
+    })
     assert.notEqual(b, a)
     assert.deepEqual(b, a)
     assert.notEqual(b[0], a[0])
     assert.deepEqual(b[0], a[0])
   })
+
+  test.only("merges leading tokens when mergeNext returns 3 (same window + clip rules as streamLexicalPieces)", async () => {
+    const mergeWindowFirstCall = ["il", "y", "a", "un", "chat"]
+    const promptBody =
+      "(scratch prompt — change freely while experimenting)\n" +
+      'Reply with JSON only: {"count": N} where N is 1..3 for leading tokens.\n' +
+      "Tokens:\n" +
+      JSON.stringify(mergeWindowFirstCall)
+    assert.ok(promptBody.includes("Tokens:\n"))
+    assert.ok(promptBody.endsWith(JSON.stringify(mergeWindowFirstCall)))
+
+    const tokens = parseTokens("il y a un chat")
+    let calls = 0
+    const mergeNextSegmentLead = async ({ words }) => {
+      calls += 1
+      if (calls === 1) {
+        assert.deepEqual(words, mergeWindowFirstCall)
+        return 3
+      }
+      if (calls === 2) assert.deepEqual(words, ["un", "chat"])
+      if (calls === 3) assert.deepEqual(words, ["chat"])
+      return 1
+    }
+    const out = await identifyIdioms(tokens, {
+      mergeNextSegmentLead,
+      segmentUtils: globalThis.LingoLeafSegmentUtils,
+    })
+    assert.equal(calls, 3)
+    assert.deepEqual(
+      out.map((t) => t.word),
+      ["il y a", "un", "chat"],
+    )
+  })
 })
 
 describe("translate", () => {
-  test("noop leaves translation empty and pending true", () => {
+  test("noop leaves translation empty and pending true", async () => {
     const a = parseTokens("chat")
-    const b = translate(identifyIdioms(a))
+    const idioms = await identifyIdioms(a)
+    const b = translate(idioms)
     assert.equal(b[0].translation, "")
     assert.equal(b[0].translationPending, true)
     assert.notEqual(b[0], a[0])

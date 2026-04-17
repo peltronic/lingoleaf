@@ -1,3 +1,5 @@
+// Libs are plain scripts (no bundler): `importScripts` runs each file in this service worker's shared global scope.
+// Each `lib/*.js` registers APIs on `globalThis` (e.g. `LingoLeafSegmentUtils`); we read them below—same pattern Node tests use when they `require` those files.
 importScripts(
   "lib/segment-utils.js",
   "lib/prompts.js",

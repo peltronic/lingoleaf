@@ -7,16 +7,20 @@
   - what the function does
   - how it is used
   - why it exists (user/UX or architectural reason)
-  - (Exception: `extension/lib/` named functions also use Params/Returns lines as in **Lib function contracts** below.)
+  - (Exception: `extension/lib/` named functions also use Input/Output lines as in **Lib function contracts** below.)
 - Prefer intent-level comments over line-by-line logic narration.
 - Avoid obvious comments and avoid restating code syntax.
 
 ## Lib function contracts (`extension/lib/`)
 - Above every **named** function (including nested helpers), document **inputs** and **return value** using `//` lines.
-- Use explicit labels so it scans quickly, for example:
-  - `// Params: ...` (types or shapes in plain language: string, string[], object fields)
-  - `// Returns: ...` (type + meaning; note `null`, empty string, or thrown errors when relevant)
-- One-line intent summary may precede Params/Returns; keep the whole block compact (avoid JSDoc `/** */`).
+- Use explicit labels so it scans quickly:
+  - `// Input:` on its own line, then **one argument per line** (name — type/shape and short meaning).
+  - `// Output:` on its own line, then the return type and meaning (note `null`, empty string, thrown errors, or each `yield` when relevant).
+- One-line intent summary may precede Input/Output; keep the whole block compact (avoid JSDoc `/** */`).
+
+## Naming (one word, one concept)
+- Each **domain term** (e.g. in names, comments, and tests) should map to **exactly one concept** across the repo; do not reuse the same word for different shapes or layers (for example a raw string chunk vs a saved-row object).
+- When introducing or touching an area, **prefer distinct terms** for distinct things (identifiers, comment nouns, and user-facing copy where you control the wording) and stay consistent with nearby code; if legacy naming overloads a term, note it briefly or fix it in a **small, dedicated** rename pass rather than piling on new meanings.
 
 ## Refactoring boundaries
 - Keep `background.js` focused on Chrome extension orchestration:
