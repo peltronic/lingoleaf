@@ -7,16 +7,17 @@ const { describe, test } = require("node:test")
 
 require("./segment-utils.js")
 require("./word-pipeline.js")
+
 const { parseTokens, identifyIdioms, translate } =
   globalThis.LingoLeafWordPipeline
 
 describe("parseTokens", () => {
-  test("empty and whitespace yield no tokens", () => {
+  test("empty and whitespace yield no vocabRows", () => {
     assert.deepEqual(parseTokens(""), [])
     assert.deepEqual(parseTokens("   \n\t  "), [])
   })
 
-  test("single word becomes one saved-shaped row without save-time ids", () => {
+  test("single word becomes one vocabRow without save-time ids", () => {
     const out = parseTokens("  bonjour  ")
     assert.equal(out.length, 1)
     assert.deepEqual(out[0], {
@@ -32,22 +33,22 @@ describe("parseTokens", () => {
   test("splits on whitespace and strips punctuation around words", () => {
     const out = parseTokens("Oh, l'amour — vite!")
     assert.deepEqual(
-      out.map((t) => t.word),
+      out.map((row) => row.word),
       ["Oh", "l'amour", "vite"],
     )
   })
 
-  test("hyphenated and apostrophe forms stay one surface word when inside token", () => {
+  test("hyphenated and apostrophe forms stay one surface word per raw segment", () => {
     const out = parseTokens("porte-manteau aujourd'hui")
     assert.deepEqual(
-      out.map((t) => t.word),
+      out.map((row) => row.word),
       ["porte-manteau", "aujourd'hui"],
     )
   })
 })
 
 describe("identifyIdioms", () => {
-  test("merge count 1 preserves words and returns new rows matching parseTokens shape", async () => {
+  test("merge count 1 preserves words and returns new vocabRows matching parseTokens shape", async () => {
     const a = parseTokens("un deux")
     const b = await identifyIdioms(a, {
       mergeNextSegmentLead: async () => 1,
@@ -58,35 +59,34 @@ describe("identifyIdioms", () => {
     assert.deepEqual(b[0], a[0])
   })
 
-  test.only("merges leading tokens when mergeNext returns 3 (same window + clip rules as streamLexicalPieces)", async () => {
-    const mergeWindowFirstCall = ["il", "y", "a", "un", "chat"]
+  test.only("merges leading vocabRows when mergeNext returns 3 (same window + clip rules as streamLexicalPieces)", async () => {
+    const wordList = ["il", "y", "a", "un", "chat"]
     const promptBody =
-      "(scratch prompt — change freely while experimenting)\n" +
       'Reply with JSON only: {"count": N} where N is 1..3 for leading tokens.\n' +
       "Tokens:\n" +
-      JSON.stringify(mergeWindowFirstCall)
+      JSON.stringify(wordList)
     assert.ok(promptBody.includes("Tokens:\n"))
-    assert.ok(promptBody.endsWith(JSON.stringify(mergeWindowFirstCall)))
+    assert.ok(promptBody.endsWith(JSON.stringify(wordList)))
 
-    const tokens = parseTokens("il y a un chat")
+    const vocabRows = parseTokens("il y a un chat")
     let calls = 0
     const mergeNextSegmentLead = async ({ words }) => {
       calls += 1
       if (calls === 1) {
-        assert.deepEqual(words, mergeWindowFirstCall)
+        assert.deepEqual(words, wordList)
         return 3
       }
       if (calls === 2) assert.deepEqual(words, ["un", "chat"])
       if (calls === 3) assert.deepEqual(words, ["chat"])
       return 1
     }
-    const out = await identifyIdioms(tokens, {
+    const out = await identifyIdioms(vocabRows, {
       mergeNextSegmentLead,
       segmentUtils: globalThis.LingoLeafSegmentUtils,
     })
     assert.equal(calls, 3)
     assert.deepEqual(
-      out.map((t) => t.word),
+      out.map((row) => row.word),
       ["il y a", "un", "chat"],
     )
   })

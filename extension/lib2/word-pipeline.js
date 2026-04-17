@@ -20,13 +20,13 @@
     return clipped
   }
 
-  // Builds one list-row-shaped token for pipeline stages; omits save-time fields (`id`, `savedAt`, `saveSessionId`).
+  // Builds one `vocabRow` for the pipeline: same core fields as `buildEntry` in background.js before `id` / `savedAt` / `saveSessionId`.
   // Input:
-  //   word — string, surface French (one lexical unit after extraction).
+  //   surfaceFrench — string, one surface form (single word or merged phrase).
   // Output:
-  //   object, same core fields as `buildEntry` in background.js before ids/timestamps are applied.
-  function savedRowShapedToken(word) {
-    const w = String(word || "").trim()
+  //   object, vocabRow shape `{ word, translation, translationPending, urls }`.
+  function makeVocabRow(surfaceFrench) {
+    const w = String(surfaceFrench || "").trim()
     return {
       word: w,
       translation: "",
@@ -37,46 +37,54 @@
 
   // Pulls the first word-like substring from one whitespace-delimited piece (apostrophe/hyphen for compounds).
   // Input:
-  //   token — string.
+  //   rawSegment — string, one chunk from `split(/\s+/)` (may include punctuation).
   // Output:
   //   string, empty when no letters/digits remain.
-  function extractWordFromToken(token) {
-    const m = String(token).match(/[\p{L}\p{N}]+(?:['-][\p{L}\p{N}]+)*/u)
+  function extractWordFromSegment(rawSegment) {
+    const m = String(rawSegment).match(/[\p{L}\p{N}]+(?:['-][\p{L}\p{N}]+)*/u)
     return m ? m[0] : ""
   }
 
-  // Splits user text into ordered saved-row-shaped tokens (self-contained; does not call segment-utils).
+  // Splits user text into ordered `vocabRow`s (self-contained; does not call segment-utils).
   // Input:
   //   text — string, raw phrase or sentence.
   // Output:
-  //   object[], tokens with `word`, `translation`, `translationPending`, `urls` (empty array when nothing parses).
+  //   vocabRow[], one row per extracted surface word (empty when nothing parses).
   function parseTokens(text) {
     const t = String(text || "").trim()
     if (!t) return []
     const out = []
     for (const piece of t.split(/\s+/)) {
-      const w = extractWordFromToken(piece)
-      if (w) out.push(savedRowShapedToken(w))
+      const w = extractWordFromSegment(piece)
+      if (w) out.push(makeVocabRow(w))
     }
     return out
   }
 
-  // Groups adjacent single-word rows using the same window, clip, merge-count, and dedupe 
+  // Groups adjacent single-word `vocabRow`s using the same window, clip, merge-count, and dedupe
   // rules as `streamLexicalPieces` in segmentation-pipeline.js (merge call is injectable for tests).
   // Input:
-  //   tokens — object[], saved-row-shaped items whose `word` fields 
-  //            are the same sequence tokenizeSelectionToWords would produce.
-  //   opts — optional `{ mergeNextSegmentLead, segmentUtils, segmentCfg, baseUrl, model }`; 
-  //          `mergeNextSegmentLead` defaults to `globalThis.LingoLeafOllamaApi.mergeNextSegmentLead` when set; if no merge function exists, chunk size stays 1 (no network). Pass `baseUrl` and `model` when using the default Ollama merge.
+  //   vocabRows — object[], each a vocabRow whose `word` is one surface word (same order as `tokenizeSelectionToWords` on that text).
+  //   opts — optional object; all keys optional:
+  //    - mergeNextSegmentLead — on `opts`, async fn `(args) => count` with args `{ baseUrl, model, words, maxSpan }` 
+  //     like Ollama merge; returns how many leading `words` to merge. Defaults to `globalThis.LingoLeafOllamaApi.mergeNextSegmentLead` 
+  //     when that exists; if absent, every chunk size is 1 (no merge, no network).
+  //    - segmentUtils — on `opts`, object with `normalizeForCompare` for dedupe keys; defaults to `globalThis.LingoLeafSegmentUtils` 
+  //      (required for multi-word input).
+  //    - segmentCfg — on `opts`, partial `{ maxItems, maxChars }` merged with pipeline defaults; caps how many surface words 
+  //      enter the merge window and JSON size for clipping.
+  //    - baseUrl — on `opts`, string, Ollama base URL; forwarded to `mergeNextSegmentLead` (needed 
+  //      for the real API implementation).
+  //    - model — on `opts`, string, model id; forwarded to `mergeNextSegmentLead` (needed for the real API implementation).
   // Output:
-  //   Promise<object[]>, merged rows (`word` may contain spaces); empty when `tokens` is empty.
-  async function identifyIdioms(tokens, opts = {}) {
-    if (!tokens || !tokens.length) return []
-    const allWords = tokens
-      .map((t) => String(t && t.word != null ? t.word : "").trim())
+  //   Promise<vocabRow[]>, merged rows (`word` may contain spaces); empty when `vocabRows` is empty.
+  async function identifyIdioms(vocabRows, opts = {}) {
+    if (!vocabRows || !vocabRows.length) return []
+    const allWords = vocabRows
+      .map((row) => String(row && row.word != null ? row.word : "").trim())
       .filter(Boolean)
     if (!allWords.length) return []
-    if (allWords.length === 1) return [{ ...tokens[0] }]
+    if (allWords.length === 1) return [{ ...vocabRows[0] }]
 
     const segmentUtils =
       opts.segmentUtils ?? globalThis.LingoLeafSegmentUtils
@@ -126,7 +134,7 @@
       const key = segmentUtils.normalizeForCompare(surface)
       if (key && !seen.has(key)) {
         seen.add(key)
-        out.push(savedRowShapedToken(surface))
+        out.push(makeVocabRow(surface))
       }
       i += count
     }
@@ -136,7 +144,7 @@
       const key = segmentUtils.normalizeForCompare(w)
       if (key && !seen.has(key)) {
         seen.add(key)
-        out.push(savedRowShapedToken(w))
+        out.push(makeVocabRow(w))
       }
     }
 
@@ -145,12 +153,12 @@
 
   // Placeholder for English gloss; leaves `translation` empty and `translationPending` true.
   // Input:
-  //   tokens — object[], saved-row-shaped items after idiom pass.
+  //   vocabRows — object[], vocabRows after idiom pass.
   // Output:
-  //   object[], shallow copy per item (translate pass is a no-op for now).
-  function translate(tokens) {
-    if (!tokens || !tokens.length) return []
-    return tokens.map((x) => ({ ...x }))
+  //   vocabRow[], shallow copy per row (translate pass is a no-op for now).
+  function translate(vocabRows) {
+    if (!vocabRows || !vocabRows.length) return []
+    return vocabRows.map((row) => ({ ...row }))
   }
 
   const api = { parseTokens, identifyIdioms, translate }

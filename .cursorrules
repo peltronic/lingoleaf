@@ -19,7 +19,8 @@
 - One-line intent summary may precede Input/Output; keep the whole block compact (avoid JSDoc `/** */`).
 
 ## Naming (one word, one concept)
-- Each **domain term** (e.g. in names, comments, and tests) should map to **exactly one concept** across the repo; do not reuse the same word for different shapes or layers (for example a raw string chunk vs a saved-row object).
+- Each **domain term** (e.g. in names, comments, and tests) should map to **exactly one concept** across the repo; do not reuse the same word for different shapes or layers (for example a raw string chunk vs a **`vocabRow`** object in `word-pipeline.js`).
+- In **`word-pipeline.js`**, a **`vocabRow`** is a plain object `{ word, translation, translationPending, urls }`; persisted list items add `id`, `savedAt`, etc. (see `buildEntry` in `background.js`).
 - When introducing or touching an area, **prefer distinct terms** for distinct things (identifiers, comment nouns, and user-facing copy where you control the wording) and stay consistent with nearby code; if legacy naming overloads a term, note it briefly or fix it in a **small, dedicated** rename pass rather than piling on new meanings.
 
 ## Refactoring boundaries
