@@ -1,4 +1,8 @@
 ;(() => {
+  const BASE_URL = "http://127.0.0.1:11434"
+  // Must match native Ollama model tags (see `OLLAMA_MODEL` in background.js); not OpenAI-style `provider/model` ids.
+  const MODEL = "qwen2.5:3b"
+
   const prompts = globalThis.LingoLeafPrompts
   const segmentUtils = globalThis.LingoLeafSegmentUtils
 
@@ -10,7 +14,7 @@
   //   temperature — number.
   // Output:
   //   string, trimmed assistant text, or empty string on failure or missing content.
-  async function ollamaChat({ baseUrl, model, content, temperature }) {
+  async function ollamaChat({ content, temperature = 0.1, baseUrl = BASE_URL, model = MODEL }) {
     const res = await fetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -31,10 +35,10 @@
 
   // Asks how many leading tokens in `words` to merge next; used once per segment in the streaming merge pipeline.
   // Input:
-  //   baseUrl — string.
-  //   model — string.
-  //   words — non-empty string[], lookahead window.
-  //   maxSpan — number, cap for returned count (e.g. 3).
+  //   baseUrl — string: Ollama base URL
+  //   model — string: Ollama model id
+  //   words — non-empty string[], lookahead window
+  //   maxSpan — number, cap for returned count (e.g. 3)
   // Output:
   //   integer from 1 to min(maxSpan, words.length); defaults to 1 when the model output does not parse.
   async function mergeNextSegmentLead({ baseUrl, model, words, maxSpan }) {
@@ -72,6 +76,7 @@
   }
 
   globalThis.LingoLeafOllamaApi = {
+    ollamaChat,
     mergeNextSegmentLead,
     translateToEnglish,
   }

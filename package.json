@@ -2,6 +2,9 @@
   "name": "lingoleaf",
   "version": "0.1.2",
   "private": true,
+  "imports": {
+    "#extension/*": "./extension/*"
+  },
   "description": "LingoLeaf browser extension (Chrome MV3) — French learning helper with local AI",
   "license": "MIT",
   "keywords": ["chrome-extension", "manifest-v3", "language-learning"],
@@ -10,6 +13,7 @@
     "test:all": "node --test extension/lib/*.test.js",
     "test:watch": "node --test --test-only --watch extension/lib/*.test.js",
     "test:all:watch": "node --test --watch extension/lib/*.test.js",
+    "test:lib2": "node --test extension/lib2/__tests__/*.test.js",
     "test:one": "node --test",
     "test:one:focus": "node --test --test-only"
   },

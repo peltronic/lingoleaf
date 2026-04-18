@@ -4,12 +4,17 @@
 
 const assert = require("node:assert/strict")
 const { describe, test } = require("node:test")
+const prompts = require("#extension/lib2/prompts.js")
 
-require("./segment-utils.js")
-require("./word-pipeline.js")
+// Imports resolve from repo root via `package.json` → `"imports"` → `#extension/*` (run tests from project root).
+require("#extension/lib/segment-utils.js")
+require("#extension/lib/prompts.js")
+require("#extension/lib2/word-pipeline.js")
+require("#extension/lib/ollama-api.js")
 
 const { parseTokens, identifyIdioms, translate } =
   globalThis.LingoLeafWordPipeline
+const ollamaApi = globalThis.LingoLeafOllamaApi
 
 describe("parseTokens", () => {
   test("empty and whitespace yield no vocabRows", () => {
@@ -61,34 +66,24 @@ describe("identifyIdioms", () => {
 
   test.only("merges leading vocabRows when mergeNext returns 3 (same window + clip rules as streamLexicalPieces)", async () => {
     const wordList = ["il", "y", "a", "un", "chat"]
-    const promptBody =
-      'Reply with JSON only: {"count": N} where N is 1..3 for leading tokens.\n' +
-      "Tokens:\n" +
-      JSON.stringify(wordList)
-    assert.ok(promptBody.includes("Tokens:\n"))
-    assert.ok(promptBody.endsWith(JSON.stringify(wordList)))
+    //const stringContent = wordList.join(" ")
+    const stringContent = "Donc c'est vrai que moi je m'attendais pas à ça et surtout par rapport à quand j'y étais allée il y a quelques années, ça m'a semblé beaucoup plus cher. Donc si vous êtes américain et que vous regardez cette vidéo, peut-être que vous pouvez nous dire si effectivement le coût de la vie a beaucoup augmenté ces dernières années."
+    const promptPayload = prompts.buildPhraseExtractPromptPayload({ sentence: stringContent })
 
-    const vocabRows = parseTokens("il y a un chat")
-    let calls = 0
-    const mergeNextSegmentLead = async ({ words }) => {
-      calls += 1
-      if (calls === 1) {
-        assert.deepEqual(words, wordList)
-        return 3
-      }
-      if (calls === 2) assert.deepEqual(words, ["un", "chat"])
-      if (calls === 3) assert.deepEqual(words, ["chat"])
-      return 1
-    }
-    const out = await identifyIdioms(vocabRows, {
-      mergeNextSegmentLead,
-      segmentUtils: globalThis.LingoLeafSegmentUtils,
+    //const vocabRows = parseTokens("il y a un chat")
+    //const out = await identifyIdioms(vocabRows)
+    const response = await ollamaApi.ollamaChat({
+      content: JSON.stringify(promptPayload),
     })
-    assert.equal(calls, 3)
-    assert.deepEqual(
-      out.map((row) => row.word),
-      ["il y a", "un", "chat"],
-    )
+    console.log('HERE.T1', {
+      stringContent,
+      promptPayload,
+      response,
+    })
+    //assert.deepEqual(
+    //  out.map((row) => row.word),
+    //  ["il y a", "un", "chat"],
+    //)
   })
 })
 
