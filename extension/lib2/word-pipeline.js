@@ -5,30 +5,21 @@
 
   const ollamaApi = globalThis.LingoLeafOllamaApi
   const segmentUtils = globalThis.LingoLeafSegmentUtils
+  const lib2Prompts = globalThis.LingoLeafLib2Prompts
 
   // Builds one `vocabRow` for the pipeline: same core fields as `buildEntry` in background.js before `id` / `savedAt` / `saveSessionId`.
   // Input:
-  //   surfaceFrench — string, one surface form (single word or merged phrase).
+  //   text — string, one surface form (single word or merged phrase).
   // Output:
   //   object, vocabRow shape `{ word, translation, translationPending, urls }`.
-  function makeVocabRow(surfaceFrench) {
-    const w = String(surfaceFrench || "").trim()
+  function makeVocabRow(text) {
+    const w = String(text || "").trim()
     return {
       word: w,
       translation: "",
       translationPending: true,
       urls: [],
     }
-  }
-
-  // Pulls the first word-like substring from one whitespace-delimited piece (apostrophe/hyphen for compounds).
-  // Input:
-  //   rawSegment — string, one chunk from `split(/\s+/)` (may include punctuation).
-  // Output:
-  //   string, empty when no letters/digits remain.
-  function extractCleanWordFromText(rawSegment) {
-    const m = String(rawSegment).match(/[\p{L}\p{N}]+(?:['-][\p{L}\p{N}]+)*/u)
-    return m ? m[0] : ""
   }
 
   // Splits user text into ordered `vocabRow`s
@@ -47,6 +38,17 @@
     return out
   }
 
+  // Pulls the first word-like substring from one whitespace-delimited piece (apostrophe/hyphen for compounds).
+  // Input:
+  //   rawSegment — string, one chunk from `split(/\s+/)` (may include punctuation).
+  // Output:
+  //   string, empty when no letters/digits remain.
+  function extractCleanWordFromText(rawSegment) {
+    const m = String(rawSegment).match(/[\p{L}\p{N}]+(?:['-][\p{L}\p{N}]+)*/u)
+    return m ? m[0] : ""
+  }
+
+
   // Caps the token list by count and by approximate JSON length so merge prompts 
   // stay bounded.
   // Input:
@@ -64,18 +66,19 @@
     return clipped
   }
 
-  // Groups adjacent single-word `vocabRow`s using the same window, clip, merge-count, and dedupe
-  // rules as `streamLexicalPieces` in segmentation-pipeline.js (merge call is injectable for tests).
+  // Given a list of vocabRows that represent individual words in one or more  sentences, identify 
+  // idioms or phrases and replace the individual words that compose them with the new grouping
   // Input:
   //   vocabRows — object[], each a vocabRow whose `word` is one surface word (same order as `tokenizeSelectionToWords` on that text).
   //   opts — optional object; all keys optional:
-  //    - baseUrl — on `opts`, string, Ollama base URL; forwarded to `mergeNextSegmentLead` (needed 
-  //      for the real API implementation).
-  //    - model — on `opts`, string, model id; forwarded to `mergeNextSegmentLead` (needed for the real API implementation).
+  //    - baseUrl — on `opts`, string, Ollama base URL for `ollamaChat` (optional; API defaults apply).
+  //    - model — on `opts`, string, model id for `ollamaChat` (optional; API defaults apply).
   // Output:
   //   Promise<vocabRow[]>, merged rows (`word` may contain spaces); empty when `vocabRows` is empty.
   async function identifyIdioms(vocabRows, opts = {}) {
     if (!vocabRows || !vocabRows.length) return []
+
+    const { baseUrl, model } = opts
 
     // Extract words from the vocabRows, filter out empty words
     const allWords = vocabRows
@@ -95,14 +98,27 @@
       const lookaheadIndex = Math.min(i + MERGE_LOOKAHEAD, headWords.length)
       const window = headWords.slice( i, lookaheadIndex )
       let count = 1 // holds the number of words identified to combine as an idiom
-      let response = ""
       try {
-        count = await ollamaApi.mergeNextSegmentLead({
-          baseUrl,
-          model,
-          words: window,
-          maxSpan: MERGE_MAX_SPAN,
-        })
+        if (!window.length) {
+          count = 1
+        } else {
+          const promptPayload = lib2Prompts.buildPhraseExtractPromptPayload({
+            sentence: window.join(" "),
+          })
+          const assistantText = await ollamaApi.ollamaChat({
+            baseUrl,
+            model,
+            content: JSON.stringify(promptPayload),
+            temperature: 0.1,
+          })
+          const parsed = segmentUtils.extractMergeNextLeadCount(
+            assistantText,
+            MERGE_MAX_SPAN,
+          )
+          const cap = Math.min(MERGE_MAX_SPAN, window.length)
+          count =
+            parsed == null ? 1 : Math.min(Math.max(1, parsed), cap)
+        }
       } catch {
         count = 1
       }

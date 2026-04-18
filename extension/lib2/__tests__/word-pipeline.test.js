@@ -8,13 +8,14 @@ const prompts = require("#extension/lib2/prompts.js")
 
 // Imports resolve from repo root via `package.json` → `"imports"` → `#extension/*` (run tests from project root).
 require("#extension/lib/segment-utils.js")
-require("#extension/lib/prompts.js")
-require("#extension/lib2/word-pipeline.js")
 require("#extension/lib/ollama-api.js")
+require("#extension/lib2/word-pipeline.js")
 
 const { parseTokens, identifyIdioms, translate } =
   globalThis.LingoLeafWordPipeline
 const ollamaApi = globalThis.LingoLeafOllamaApi
+
+const TEST_STRING_CONTENT_1 = "Donc c'est vrai que moi je m'attendais pas à ça et surtout par rapport à quand j'y étais allée il y a quelques années, ça m'a semblé beaucoup plus cher. Donc si vous êtes américain et que vous regardez cette vidéo, peut-être que vous pouvez nous dire si effectivement le coût de la vie a beaucoup augmenté ces dernières années."
 
 describe("parseTokens", () => {
   test("empty and whitespace yield no vocabRows", () => {
@@ -52,22 +53,11 @@ describe("parseTokens", () => {
   })
 })
 
-describe("identifyIdioms", () => {
-  test("merge count 1 preserves words and returns new vocabRows matching parseTokens shape", async () => {
-    const a = parseTokens("un deux")
-    const b = await identifyIdioms(a, {
-      mergeNextSegmentLead: async () => 1,
-    })
-    assert.notEqual(b, a)
-    assert.deepEqual(b, a)
-    assert.notEqual(b[0], a[0])
-    assert.deepEqual(b[0], a[0])
-  })
-
-  test.only("merges leading vocabRows when mergeNext returns 3 (same window + clip rules as streamLexicalPieces)", async () => {
+describe("buildPhraseExtractPromptPayload", () => {
+  test("merges leading vocabRows when mergeNext returns 3 (same window + clip rules as streamLexicalPieces)", async () => {
     const wordList = ["il", "y", "a", "un", "chat"]
     //const stringContent = wordList.join(" ")
-    const stringContent = "Donc c'est vrai que moi je m'attendais pas à ça et surtout par rapport à quand j'y étais allée il y a quelques années, ça m'a semblé beaucoup plus cher. Donc si vous êtes américain et que vous regardez cette vidéo, peut-être que vous pouvez nous dire si effectivement le coût de la vie a beaucoup augmenté ces dernières années."
+    const stringContent = TEST_STRING_CONTENT_1
     const promptPayload = prompts.buildPhraseExtractPromptPayload({ sentence: stringContent })
 
     //const vocabRows = parseTokens("il y a un chat")
@@ -85,6 +75,25 @@ describe("identifyIdioms", () => {
     //  ["il y a", "un", "chat"],
     //)
   })
+})
+
+describe("identifyIdioms", () => {
+  test("merge count 1 preserves words and returns new vocabRows matching parseTokens shape", async () => {
+    const a = parseTokens("un deux")
+    const prev = ollamaApi.ollamaChat
+    ollamaApi.ollamaChat = async () => '{"count": 1}'
+    let b
+    try {
+      b = await identifyIdioms(a)
+    } finally {
+      ollamaApi.ollamaChat = prev
+    }
+    assert.notEqual(b, a)
+    assert.deepEqual(b, a)
+    assert.notEqual(b[0], a[0])
+    assert.deepEqual(b[0], a[0])
+  })
+
 })
 
 describe("translate", () => {

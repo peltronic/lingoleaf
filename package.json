@@ -9,13 +9,9 @@
   "license": "MIT",
   "keywords": ["chrome-extension", "manifest-v3", "language-learning"],
   "scripts": {
-    "test": "node --test --test-only extension/lib/*.test.js",
-    "test:all": "node --test extension/lib/*.test.js",
-    "test:watch": "node --test --test-only --watch extension/lib/*.test.js",
-    "test:all:watch": "node --test --watch extension/lib/*.test.js",
-    "test:lib2": "node --test extension/lib2/__tests__/*.test.js",
-    "test:one": "node --test",
-    "test:one:focus": "node --test --test-only"
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "test:one": "node --test"
   },
   "engines": {
     "node": ">=20.13"

@@ -1,6 +1,7 @@
 ;(() => {
   const segmentUtils = globalThis.LingoLeafSegmentUtils
   const ollamaApi = globalThis.LingoLeafOllamaApi
+  const prompts = globalThis.LingoLeafPrompts
 
   const MERGE_MAX_SPAN = 3
   const MERGE_LOOKAHEAD = 12
@@ -14,8 +15,7 @@
   //   string[], prefix of words (possibly shortened until JSON fits).
   function clipWordsForMerge(words, maxItems, maxChars) {
     const spanCap = maxItems * MERGE_MAX_SPAN
-    let clipped =
-      words.length > spanCap ? words.slice(0, spanCap) : words.slice()
+    let clipped = words.length > spanCap ? words.slice(0, spanCap) : words.slice()
     while (clipped.length > 1 && JSON.stringify(clipped).length > maxChars) {
       clipped = clipped.slice(0, clipped.length - 1)
     }
@@ -57,12 +57,26 @@
       )
       let count = 1
       try {
-        count = await ollamaApi.mergeNextSegmentLead({
-          baseUrl,
-          model,
-          words: window,
-          maxSpan: MERGE_MAX_SPAN,
-        })
+        if (!window.length) {
+          count = 1
+        } else {
+          const assistantText = await ollamaApi.ollamaChat({
+            baseUrl,
+            model,
+            content: prompts.buildMergeNextSegmentPrompt({
+              words: window,
+              maxSpan: MERGE_MAX_SPAN,
+            }),
+            temperature: 0.1,
+          })
+          const parsed = segmentUtils.extractMergeNextLeadCount(
+            assistantText,
+            MERGE_MAX_SPAN,
+          )
+          const cap = Math.min(MERGE_MAX_SPAN, window.length)
+          count =
+            parsed == null ? 1 : Math.min(Math.max(1, parsed), cap)
+        }
       } catch {
         count = 1
       }
