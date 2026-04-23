@@ -4,6 +4,7 @@ importScripts(
   "lib/segment-utils.js",
   "lib/prompts.js",
   "lib/ollama-api.js",
+  "lib/translation-pipeline.js",
   "lib/segmentation-pipeline.js",
 )
 
@@ -26,6 +27,7 @@ const TRANSLATE_MAX_CHARS = 2000
 
 const segmentUtils = globalThis.LingoLeafSegmentUtils
 const ollamaApi = globalThis.LingoLeafOllamaApi
+const translationPipeline = globalThis.LingoLeafTranslationPipeline
 const segmentationPipeline = globalThis.LingoLeafSegmentationPipeline
 
 // Serializes menu rebuilds so concurrent removeAll/create races cannot duplicate ids.
@@ -96,54 +98,41 @@ chrome.runtime.onStartup.addListener(() => {
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message && message.type === "set-panel-mode") {
-    ;(async () => {
-      const mode = message.mode === "sidepanel" ? "sidepanel" : "popup"
-      await chrome.storage.local.set({ [PANEL_MODE_KEY]: mode })
-      await applyPanelMode(mode)
-      sendResponse({ ok: true })
-    })().catch(() => sendResponse({ ok: false }))
-    return true
-  }
+  if (!message || typeof message.type !== "string") return
 
-  if (!message || message.type !== "backfill-missing-translations")
-    return // Backfills missing translations in saved entries; triggered by popup/sidepanel "Fill missing" button.
-  ;(async () => {
-    const { [STORAGE_KEY]: existing = [] } =
-      await chrome.storage.local.get(STORAGE_KEY)
-    const updated = []
-    let filledCount = 0
+  switch (message.type) {
+    case "set-panel-mode":
+      ;(async () => {
+        const mode = message.mode === "sidepanel" ? "sidepanel" : "popup"
+        await chrome.storage.local.set({ [PANEL_MODE_KEY]: mode })
+        await applyPanelMode(mode)
+        sendResponse({ ok: true })
+      })().catch(() => sendResponse({ ok: false }))
+      return true
 
-    for (const item of existing) {
-      if (!item || typeof item !== "object") continue
-      const row = segmentUtils.normalizeEntryUrls(item)
-      if (row && row.word && !row.translation) {
-        let translation = ""
-        try {
-          translation = await ollamaApi.translateToEnglish({
+    // Backfills missing translations in saved entries; triggered by popup/sidepanel "Fill missing" button.
+    case "backfill-missing-translations":
+      ;(async () => {
+        const { [STORAGE_KEY]: existing = [] } =
+          await chrome.storage.local.get(STORAGE_KEY)
+        const { updated, filledCount } =
+          await translationPipeline.fillMissingTranslations(existing, {
             baseUrl: OLLAMA_BASE,
             model: OLLAMA_MODEL,
-            text: row.word,
             maxChars: TRANSLATE_MAX_CHARS,
           })
-        } catch {
-          translation = ""
-        }
-        if (translation) filledCount += 1
-        updated.push({ ...row, translation, translationPending: false })
-      } else {
-        updated.push(row)
-      }
-    }
+        await chrome.storage.local.set({ [STORAGE_KEY]: updated })
+        sendResponse({ ok: true, filledCount })
+      })().catch(() => sendResponse({ ok: false, filledCount: 0 }))
+      return true
 
-    await chrome.storage.local.set({ [STORAGE_KEY]: updated })
-    sendResponse({ ok: true, filledCount })
-  })().catch(() => sendResponse({ ok: false, filledCount: 0 }))
-
-  return true
+    default:
+      return
+  }
 })
 
-// Writes each row’s English gloss by id; one Ollama request per row (not batched). Runs after the list is saved so the UI can show French first.
+// Writes each row’s English gloss by id; one Ollama request per row (not batched). 
+// Runs after the list is saved so the UI can show French first.
 async function translateSavedEntriesInBackground(entries) {
   for (const entry of entries) {
     if (!entry || !entry.id || !entry.word) continue
@@ -158,8 +147,7 @@ async function translateSavedEntriesInBackground(entries) {
     } catch {
       translation = ""
     }
-    const { [STORAGE_KEY]: list = [] } =
-      await chrome.storage.local.get(STORAGE_KEY)
+    const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY)
     const idx = list.findIndex((e) => e && e.id === entry.id)
     if (idx < 0) continue
     const copy = [...list]

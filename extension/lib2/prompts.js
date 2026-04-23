@@ -2,10 +2,9 @@
   // Assembles the phrase-extraction request object; `extract_phrases` is fixed (idioms + pattern rules) per product spec.
   // Input:
   //   sentence — string, full French text to analyze.
-  //   output_format — string, e.g. `"list"`; defaults to `"list"` when null/empty.
   // Output:
   //   object, JSON-serializable payload `{ sentence, extract_phrases, output_format }` (new object each call).
-  function buildPhraseExtractPromptPayload({ sentence, output_format }) {
+  function buildPhraseExtractPromptPayload({ sentence }) {
     return {
       sentence: sentence == null ? "" : String(sentence),
       extract_phrases: [
@@ -25,10 +24,7 @@
           ],
         },
       ],
-      output_format:
-        output_format == null || output_format === ""
-          ? "list"
-          : String(output_format),
+      output_format: "list",
     }
   }
 
