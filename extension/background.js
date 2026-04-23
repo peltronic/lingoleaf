@@ -10,7 +10,7 @@ importScripts(
 
 const MENU_ID = "save-to-lingoleaf"
 const ACTION_MENU_USE_POPUP = "lingoleaf-use-popup-toolbar"
-const STORAGE_KEY = "lingoleafSaved"
+const VOCABLIST_KEY = "lingoleafSaved"
 const SEGMENTING_KEY = "lingoleafSegmenting"
 const PANEL_MODE_KEY = "lingoleafPanelMode"
 
@@ -113,15 +113,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Backfills missing translations in saved entries; triggered by popup/sidepanel "Fill missing" button.
     case "backfill-missing-translations":
       ;(async () => {
-        const { [STORAGE_KEY]: existing = [] } =
-          await chrome.storage.local.get(STORAGE_KEY)
+        const { [VOCABLIST_KEY]: existing = [] } = await chrome.storage.local.get(VOCABLIST_KEY)
         const { updated, filledCount } =
           await translationPipeline.fillMissingTranslations(existing, {
             baseUrl: OLLAMA_BASE,
             model: OLLAMA_MODEL,
             maxChars: TRANSLATE_MAX_CHARS,
           })
-        await chrome.storage.local.set({ [STORAGE_KEY]: updated })
+        await chrome.storage.local.set({ [VOCABLIST_KEY]: updated })
         sendResponse({ ok: true, filledCount })
       })().catch(() => sendResponse({ ok: false, filledCount: 0 }))
       return true
@@ -133,22 +132,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Writes each row’s English gloss by id; one Ollama request per row (not batched). 
 // Runs after the list is saved so the UI can show French first.
-async function translateSavedEntriesInBackground(entries) {
-  for (const entry of entries) {
-    if (!entry || !entry.id || !entry.word) continue
+async function setTranslations(vocabRows) {
+  for (const vr of vocabRows) {
+    if (!vr || !vr.id || !vr.word) continue
     let translation = ""
     try {
       translation = await ollamaApi.translateToEnglish({
         baseUrl: OLLAMA_BASE,
         model: OLLAMA_MODEL,
-        text: entry.word,
+        text: vr.word,
         maxChars: TRANSLATE_MAX_CHARS,
       })
     } catch {
       translation = ""
     }
-    const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY)
-    const idx = list.findIndex((e) => e && e.id === entry.id)
+    const { [VOCABLIST_KEY]: list = [] } = await chrome.storage.local.get(VOCABLIST_KEY)
+    const idx = list.findIndex((e) => e && e.id === vr.id)
     if (idx < 0) continue
     const copy = [...list]
     copy[idx] = segmentUtils.normalizeEntryUrls({
@@ -156,12 +155,13 @@ async function translateSavedEntriesInBackground(entries) {
       translation,
       translationPending: false,
     })
-    await chrome.storage.local.set({ [STORAGE_KEY]: copy })
+    await chrome.storage.local.set({ [VOCABLIST_KEY]: copy })
   }
 }
 
 // Handles context menu saves: optional segmentation, prepend rows with pending translations, then translate each row in the background.
 chrome.contextMenus.onClicked.addListener((info) => {
+  // %HERE 0423
   void (async () => {
     if (info.menuItemId === ACTION_MENU_USE_POPUP) {
       await chrome.storage.local.set({ [PANEL_MODE_KEY]: "popup" })
@@ -172,31 +172,28 @@ chrome.contextMenus.onClicked.addListener((info) => {
     if (info.menuItemId !== MENU_ID) return
 
     const rawSelection = (info.selectionText || "").trim()
-    const pageUrl = info.pageUrl || ""
     if (!rawSelection) return
 
-    const { [STORAGE_KEY]: existing = [] } =
-      await chrome.storage.local.get(STORAGE_KEY)
+    const pageUrl = info.pageUrl || ""
+
+    const { [VOCABLIST_KEY]: existing = [] } =
+      await chrome.storage.local.get(VOCABLIST_KEY)
     const baseTime = Date.now()
 
-    // Same normalized French as an existing row → only append `pageUrl` to that row’s `urls`; otherwise a new list item (no post-pass merge).
-    const buildEntry = (word, ordinal, saveSessionId) => ({
-      id: crypto.randomUUID(),
-      word: String(word || "").trim(),
-      translation: "",
-      translationPending: true,
-      urls: pageUrl ? [pageUrl.trim()] : [],
-      savedAt: baseTime + ordinal,
-      ...(saveSessionId ? { saveSessionId } : {}),
-    })
+    const shouldSegmentSelection = segmentUtils.shouldSegmentSelection(rawSelection, SEGMENT_CONFIG)
+    console.log('HERE.A')
 
-    if (segmentUtils.shouldSegmentSelection(rawSelection, SEGMENT_CONFIG)) {
+    // Same normalized French as an existing row → only append `pageUrl` to that row’s `urls`; otherwise a new list item (no post-pass merge).
+    if (shouldSegmentSelection) {
       const saveSessionId = crypto.randomUUID()
       const accumulated = []
       let newOrdinal = 0
       let clearedSegmentingBanner = false
+      console.log('HERE.B')
 
+      // indicate that we are segmenting the selection
       await chrome.storage.local.set({ [SEGMENTING_KEY]: { active: true } })
+
       try {
         for await (const word of segmentationPipeline.streamLexicalPieces(
           rawSelection,
@@ -206,15 +203,16 @@ chrome.contextMenus.onClicked.addListener((info) => {
             segmentCfg: SEGMENT_CONFIG,
           },
         )) {
-          // Each chunk: search in-flight batch then older rows — update `urls` in place on hit; only `buildEntry` when truly new.
-          const { [STORAGE_KEY]: fullList = [] } =
-            await chrome.storage.local.get(STORAGE_KEY)
-          const normalized = fullList.map((e) =>
-            segmentUtils.normalizeEntryUrls(e),
-          )
-          const rest = normalized.filter(
+          console.log('HERE.C')
+          // Retrieve the full list of saved words
+          const { [VOCABLIST_KEY]: currentVocablistRaw = [] } = await chrome.storage.local.get(VOCABLIST_KEY)
+
+          // filter out any rows that are part of the current save session
+          // normalize to make sure we are comparing the same words
+          const currentVocablist = currentVocablistRaw.filter(
             (e) => !e.saveSessionId || e.saveSessionId !== saveSessionId,
-          )
+          ).map((e) => segmentUtils.normalizeEntryUrls(e))
+
           const acc = accumulated.map((e) => segmentUtils.normalizeEntryUrls(e))
 
           const wi = segmentUtils.findEntryIndexByNormalizedWord(acc, word)
@@ -229,54 +227,54 @@ chrome.contextMenus.onClicked.addListener((info) => {
             accumulated.length = 0
             accumulated.push(...acc)
           } else {
-            const ri = segmentUtils.findEntryIndexByNormalizedWord(rest, word)
+            const ri = segmentUtils.findEntryIndexByNormalizedWord(currentVocablist, word)
             if (ri >= 0) {
-              rest[ri] = {
-                ...rest[ri],
+              currentVocablist[ri] = {
+                ...currentVocablist[ri],
                 urls: segmentUtils.mergePageUrlIntoUrls(
-                  segmentUtils.urlsFromEntry(rest[ri]),
+                  segmentUtils.urlsFromEntry(currentVocablist[ri]),
                   pageUrl,
                 ),
               }
               accumulated.length = 0
               accumulated.push(...acc)
             } else {
-              acc.push(buildEntry(word, newOrdinal, saveSessionId))
+              acc.push(segmentUtils.buildVocabRow(word, { pageUrl, baseTime, ordinal: newOrdinal, saveSessionId }))
               newOrdinal += 1
               accumulated.length = 0
               accumulated.push(...acc)
             }
           }
 
-          await chrome.storage.local.set({
-            [STORAGE_KEY]: [...accumulated, ...rest],
-          })
+          await chrome.storage.local.set({ [VOCABLIST_KEY]: [...accumulated, ...currentVocablist] })
           if (!clearedSegmentingBanner) {
             await chrome.storage.local.remove(SEGMENTING_KEY)
             clearedSegmentingBanner = true
           }
         }
-        void translateSavedEntriesInBackground(accumulated).catch(() => {})
+        void setTranslations(accumulated).catch(() => {})
         return
+
       } catch {
+
         // TL;DR: merge/stream or storage failed — keep any rows already built, else save the whole selection as one card; always re-merge list without dup session rows.
-        const { [STORAGE_KEY]: list = [] } =
-          await chrome.storage.local.get(STORAGE_KEY)
+        const { [VOCABLIST_KEY]: list = [] } =
+          await chrome.storage.local.get(VOCABLIST_KEY)
         const rest = list
           .map((e) => segmentUtils.normalizeEntryUrls(e))
           .filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId)
         if (accumulated.length) {
-          const acc = accumulated.map((e) => segmentUtils.normalizeEntryUrls(e))
+          const vocablist = accumulated.map((e) => segmentUtils.normalizeEntryUrls(e))
           await chrome.storage.local.set({
-            [STORAGE_KEY]: [...acc, ...rest],
+            [VOCABLIST_KEY]: [...vocablist, ...rest],
           })
-          void translateSavedEntriesInBackground(acc).catch(() => {})
+          void setTranslations(vocablist).catch(() => {})
         } else {
-          const fb = buildEntry(rawSelection, 0, saveSessionId)
+          const fb = segmentUtils.buildVocabRow(rawSelection, { pageUrl, baseTime, ordinal: 0, saveSessionId })
           await chrome.storage.local.set({
-            [STORAGE_KEY]: [fb, ...rest],
+            [VOCABLIST_KEY]: [fb, ...rest],
           })
-          void translateSavedEntriesInBackground([fb]).catch(() => {})
+          void setTranslations([fb]).catch(() => {})
         }
         return
       } finally {
@@ -284,9 +282,8 @@ chrome.contextMenus.onClicked.addListener((info) => {
       }
     }
 
-    const normalizedExisting = existing.map((e) =>
-      segmentUtils.normalizeEntryUrls(e),
-    )
+    const normalizedExisting = existing.map((e) => segmentUtils.normalizeEntryUrls(e))
+
     const dupIdx = segmentUtils.findEntryIndexByNormalizedWord(
       normalizedExisting,
       rawSelection,
@@ -301,15 +298,15 @@ chrome.contextMenus.onClicked.addListener((info) => {
           pageUrl,
         ),
       }
-      await chrome.storage.local.set({ [STORAGE_KEY]: copy })
+      await chrome.storage.local.set({ [VOCABLIST_KEY]: copy })
       return
     }
 
-    const entry = buildEntry(rawSelection, 0)
+    const vocabRow = segmentUtils.buildVocabRow(rawSelection, { pageUrl, baseTime, ordinal: 0 })
     await chrome.storage.local.set({
-      [STORAGE_KEY]: [entry, ...normalizedExisting],
+      [VOCABLIST_KEY]: [vocabRow, ...normalizedExisting],
     })
 
-    void translateSavedEntriesInBackground([entry]).catch(() => {})
+    void setTranslations([vocabRow]).catch(() => {})
   })().catch(() => {})
 })

@@ -283,6 +283,27 @@
     }
   }
 
+  // Constructs a new persisted vocabRow for a saved word or phrase.
+  // Input:
+  //   word — string, French surface form.
+  //   pageUrl — string, URL of the page where the word was saved; empty string for none.
+  //   baseTime — number, ms timestamp for the save session (Date.now() at session start).
+  //   ordinal — number, 0-based index within the save session (used to order rows).
+  //   saveSessionId — string or undefined, shared UUID for all rows from one segmented save.
+  // Output:
+  //   object, vocabRow with id, word, translation, translationPending, urls, savedAt, and optionally saveSessionId.
+  function buildVocabRow(word, { pageUrl = "", baseTime, ordinal, saveSessionId } = {}) {
+    return {
+      id: crypto.randomUUID(),
+      word: String(word || "").trim(),
+      translation: "",
+      translationPending: true,
+      urls: pageUrl ? [pageUrl.trim()] : [],
+      savedAt: baseTime + ordinal,
+      ...(saveSessionId ? { saveSessionId } : {}),
+    }
+  }
+
   globalThis.LingoLeafSegmentUtils = {
     DEFAULTS,
     countWords,
@@ -293,6 +314,7 @@
     tokenizeSelectionToWords,
     materializeWordPartitionOrNull,
     dedupeSegmentsPreserveOrder,
+    buildVocabRow,
     urlsFromEntry,
     mergePageUrlIntoUrls,
     normalizeEntryUrls,

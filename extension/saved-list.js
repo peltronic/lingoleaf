@@ -1,4 +1,4 @@
-const STORAGE_KEY = "lingoleafSaved"
+const VOCABLIST_KEY = "lingoleafSaved"
 const SEGMENTING_KEY = "lingoleafSegmenting"
 
 const buildMetaEl = document.getElementById("build-meta")
@@ -84,10 +84,10 @@ function sameEntry(a, b) {
 }
 
 async function deleteEntry(item) {
-  const { [STORAGE_KEY]: entries = [] } =
-    await chrome.storage.local.get(STORAGE_KEY)
+  const { [VOCABLIST_KEY]: entries = [] } =
+    await chrome.storage.local.get(VOCABLIST_KEY)
   const next = entries.filter((e) => !sameEntry(e, item))
-  await chrome.storage.local.set({ [STORAGE_KEY]: next })
+  await chrome.storage.local.set({ [VOCABLIST_KEY]: next })
 }
 
 function render(entries, showSegmentingBanner) {
@@ -185,8 +185,8 @@ function render(entries, showSegmentingBanner) {
 }
 
 async function load() {
-  const data = await chrome.storage.local.get([STORAGE_KEY, SEGMENTING_KEY])
-  const entries = data[STORAGE_KEY] || []
+  const data = await chrome.storage.local.get([VOCABLIST_KEY, SEGMENTING_KEY])
+  const entries = data[VOCABLIST_KEY] || []
   const showSegmentingBanner = !!(
     data[SEGMENTING_KEY] && data[SEGMENTING_KEY].active
   )
@@ -218,7 +218,7 @@ async function renderBuildMeta() {
 }
 
 clearBtn.addEventListener("click", async () => {
-  await chrome.storage.local.set({ [STORAGE_KEY]: [] })
+  await chrome.storage.local.set({ [VOCABLIST_KEY]: [] })
   await chrome.storage.local.remove(SEGMENTING_KEY).catch(() => {})
   setStatus("")
   await load()
@@ -282,7 +282,7 @@ if (unlockPopupBtn) {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && (changes[STORAGE_KEY] || changes[SEGMENTING_KEY])) {
+  if (area === "local" && (changes[VOCABLIST_KEY] || changes[SEGMENTING_KEY])) {
     void load()
   }
 })
