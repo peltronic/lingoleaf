@@ -2,19 +2,19 @@
   const segmentUtils = globalThis.LingoLeafSegmentUtils
   const ollamaApi = globalThis.LingoLeafOllamaApi
 
-  // Normalizes saved rows and fills only entries that are missing English translations.
+  // Fills only entries that are missing English translations.
   // Input:
   //   existing — array, saved storage entries (may contain invalid items).
   //   opts — object `{ baseUrl, model, maxChars }` for translation requests.
   // Output:
-  //   Promise<{ updated: object[], filledCount: number }>, normalized entries plus count of newly filled translations.
+  //   Promise<{ updated: object[], filledCount: number }>, updated entries plus count of newly filled translations.
   async function fillMissingTranslations(existing, { baseUrl, model, maxChars }) {
     const updated = []
     let filledCount = 0
 
     for (const item of existing) {
       if (!item || typeof item !== "object") continue
-      const row = segmentUtils.normalizeEntryUrls(item)
+      const row = segmentUtils.copyVocabRow(item)
       if (row && row.word && !row.translation) {
         let translation = ""
         try {

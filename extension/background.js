@@ -150,11 +150,11 @@ async function setTranslations(vocabRows) {
     const idx = list.findIndex((e) => e && e.id === vr.id)
     if (idx < 0) continue
     const copy = [...list]
-    copy[idx] = segmentUtils.normalizeEntryUrls({
+    copy[idx] = {
       ...copy[idx],
       translation,
       translationPending: false,
-    })
+    }
     await chrome.storage.local.set({ [VOCABLIST_KEY]: copy })
   }
 }
@@ -207,42 +207,41 @@ chrome.contextMenus.onClicked.addListener((info) => {
           // Retrieve the full list of saved words
           const { [VOCABLIST_KEY]: currentVocablistRaw = [] } = await chrome.storage.local.get(VOCABLIST_KEY)
 
-          // filter out any rows that are part of the current save session
-          // normalize to make sure we are comparing the same words
+          // filter out any rows that are part of the current save session; then shallow-copy so we can mutate without aliasing storage
           const currentVocablist = currentVocablistRaw.filter(
             (e) => !e.saveSessionId || e.saveSessionId !== saveSessionId,
-          ).map((e) => segmentUtils.normalizeEntryUrls(e))
+          ).map((e) => segmentUtils.copyVocabRow(e))
 
-          const acc = accumulated.map((e) => segmentUtils.normalizeEntryUrls(e))
+          const normalizedAccumulated = accumulated.map((e) => segmentUtils.copyVocabRow(e))
 
-          const wi = segmentUtils.findEntryIndexByNormalizedWord(acc, word)
+          const wi = segmentUtils.findEntryIndexByNormalizedWord(normalizedAccumulated, word)
           if (wi >= 0) {
-            acc[wi] = {
-              ...acc[wi],
+            normalizedAccumulated[wi] = {
+              ...normalizedAccumulated[wi],
               urls: segmentUtils.mergePageUrlIntoUrls(
-                segmentUtils.urlsFromEntry(acc[wi]),
+                normalizedAccumulated[wi].urls || [],
                 pageUrl,
               ),
             }
             accumulated.length = 0
-            accumulated.push(...acc)
+            accumulated.push(...normalizedAccumulated)
           } else {
             const ri = segmentUtils.findEntryIndexByNormalizedWord(currentVocablist, word)
             if (ri >= 0) {
               currentVocablist[ri] = {
                 ...currentVocablist[ri],
                 urls: segmentUtils.mergePageUrlIntoUrls(
-                  segmentUtils.urlsFromEntry(currentVocablist[ri]),
+                  currentVocablist[ri].urls || [],
                   pageUrl,
                 ),
               }
               accumulated.length = 0
-              accumulated.push(...acc)
+              accumulated.push(...normalizedAccumulated)
             } else {
-              acc.push(segmentUtils.buildVocabRow(word, { pageUrl, baseTime, ordinal: newOrdinal, saveSessionId }))
+              normalizedAccumulated.push(segmentUtils.buildVocabRow(word, { pageUrl, baseTime, ordinal: newOrdinal, saveSessionId }))
               newOrdinal += 1
               accumulated.length = 0
-              accumulated.push(...acc)
+              accumulated.push(...normalizedAccumulated)
             }
           }
 
@@ -261,10 +260,10 @@ chrome.contextMenus.onClicked.addListener((info) => {
         const { [VOCABLIST_KEY]: list = [] } =
           await chrome.storage.local.get(VOCABLIST_KEY)
         const rest = list
-          .map((e) => segmentUtils.normalizeEntryUrls(e))
+          .map((e) => segmentUtils.copyVocabRow(e))
           .filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId)
         if (accumulated.length) {
-          const vocablist = accumulated.map((e) => segmentUtils.normalizeEntryUrls(e))
+          const vocablist = accumulated.map((e) => segmentUtils.copyVocabRow(e))
           await chrome.storage.local.set({
             [VOCABLIST_KEY]: [...vocablist, ...rest],
           })
@@ -282,7 +281,7 @@ chrome.contextMenus.onClicked.addListener((info) => {
       }
     }
 
-    const normalizedExisting = existing.map((e) => segmentUtils.normalizeEntryUrls(e))
+    const normalizedExisting = existing.map((e) => segmentUtils.copyVocabRow(e))
 
     const dupIdx = segmentUtils.findEntryIndexByNormalizedWord(
       normalizedExisting,
@@ -294,7 +293,7 @@ chrome.contextMenus.onClicked.addListener((info) => {
       copy[dupIdx] = {
         ...copy[dupIdx],
         urls: segmentUtils.mergePageUrlIntoUrls(
-          segmentUtils.urlsFromEntry(copy[dupIdx]),
+          copy[dupIdx].urls || [],
           pageUrl,
         ),
       }

@@ -120,55 +120,45 @@
     return out
   }
 
-  // Reads source URLs from a saved row; supports legacy single `url` string or `urls` array.
+  // True if `pageUrl` (after trim) is already present in `urls` (string compare after trim on each list entry).
   // Input:
-  //   entry — object from storage (may be legacy shape).
+  //   urls — string[].
+  //   pageUrl — string to test (may be empty; empty after trim is not considered duplicate of anything).
   // Output:
-  //   string[], trimmed http(s) URLs in stored order, deduped.
-  function urlsFromEntry(entry) {
-    if (!entry || typeof entry !== "object") return []
-    if (Array.isArray(entry.urls)) {
-      const out = []
-      const seen = new Set()
-      for (const u of entry.urls) {
-        if (typeof u !== "string") continue
-        const t = u.trim()
-        if (!t || seen.has(t)) continue
-        seen.add(t)
-        out.push(t)
-      }
-      if (out.length) return out
+  //   boolean.
+  function isDuplicatePageUrl(urls, pageUrl) {
+    if (!Array.isArray(urls) || !pageUrl || typeof pageUrl !== "string" || !pageUrl.trim())
+      return false
+    const t = pageUrl.trim()
+    for (let i = 0; i < urls.length; i += 1) {
+      const s = urls[i]
+      if (typeof s === "string" && s.trim() === t) return true
     }
-    if (typeof entry.url === "string" && entry.url.trim())
-      return [entry.url.trim()]
-    return []
+    return false
   }
 
-  // Builds the next `urls` array for an existing row when the learner saves the same phrase from another page (caller writes the row back).
+  // Appends the current page URL only if `isDuplicatePageUrl` is false.
   // Input:
   //   urls — string[].
   //   pageUrl — string (may be empty).
   // Output:
   //   string[], new array (never mutates `urls`).
   function mergePageUrlIntoUrls(urls, pageUrl) {
-    const base = Array.isArray(urls) ? urlsFromEntry({ urls }) : []
+    const base = Array.isArray(urls) ? [...urls] : []
     if (!pageUrl || typeof pageUrl !== "string" || !pageUrl.trim()) return base
     const u = pageUrl.trim()
-    if (base.includes(u)) return base.slice()
+    if (isDuplicatePageUrl(base, u)) return base
     return [...base, u]
   }
 
-  // Normalizes a stored row to `{ …, urls }` and drops legacy `url` so new writes stay consistent.
+  // Shallow-copies a vocabRow so the `urls` array is not shared (safe before mutating rows in memory).
   // Input:
-  //   entry — object from storage.
+  //   row — object from storage, or any value.
   // Output:
-  //   object, same row with `urls` array and without `url`.
-  function normalizeEntryUrls(entry) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry))
-      return entry
-    const urls = urlsFromEntry(entry)
-    const { url, ...rest } = entry
-    return { ...rest, urls }
+  //   a plain object with `urls` as a new array, or the original value if not a non-array object.
+  function copyVocabRow(row) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return row
+    return { ...row, urls: Array.isArray(row.urls) ? [...row.urls] : [] }
   }
 
   // Finds a row index for save-time upsert: same normalized French as `word` means merge `urls`, not append a duplicate row.
@@ -315,9 +305,9 @@
     materializeWordPartitionOrNull,
     dedupeSegmentsPreserveOrder,
     buildVocabRow,
-    urlsFromEntry,
+    isDuplicatePageUrl,
     mergePageUrlIntoUrls,
-    normalizeEntryUrls,
+    copyVocabRow,
     findEntryIndexByNormalizedWord,
     extractMergeNextLeadCount,
     extractJsonStringArray,

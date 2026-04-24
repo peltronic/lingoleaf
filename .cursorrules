@@ -47,6 +47,11 @@
   - fallback to simpler behavior if segmentation/parsing fails
 - Keep list storage updates explicit and predictable (`chrome.storage.local`).
 
+## Schema and storage (pre-prod)
+- The extension is not production-critical; it is fine to **reset** `chrome.storage` or ask developers to **clear** saved data when a shape changes, rather than keep backward-compatible bridges.
+- **Do not** add legacy-field shims, dual-read fallbacks, or ad hoc “migrate old `foo` to new `bar`” helpers (for example a lone `url` field vs `urls[]`) **unless** the user explicitly needs to preserve real users’ persisted data across releases. Prefer one canonical in-memory and on-disk shape; change the code and, if needed, the storage key or a documented “clear saved list in dev” step, instead of carrying compatibility layers.
+- If compatibility code is added for a good reason, keep it in one obvious place and **remove** it once a migration or sunset window is done—do not multiply helpers that only exist for obsolete on-disk rows.
+
 ## UI logic conventions
 - Share UI behavior across popup and sidepanel via common scripts/styles when feasible.
 - Keep markup differences minimal and intentional (mode-specific controls/hints only).
