@@ -5,22 +5,22 @@
   //   maxSpan — number, max tokens the model may return in count.
   // Output:
   //   string, full prompt body including the serialized token list.
-  function buildMergeNextSegmentPrompt({ words, maxSpan }) {
+  function buildPromptToIdentifyIdioms({ words, maxSpan }) {
     const payload = JSON.stringify(words)
     return (
-      "You help French learners group adjacent French tokens. The JSON array is only the NEXT tokens in a sentence.\n" +
-      "You must decide how many LEADING tokens (from index 0) form the next single learnable chunk.\n" +
+      "You help French learners group adjacent French words. The JSON array is only the NEXT words in a sentence.\n" +
+      "You must decide how many LEADING words (from index 0) form the next single learnable chunk, that is a common idiom or phrase used in French.\n" +
       'Return JSON ONLY in this exact shape: {"count": N}\n' +
       "- N is an integer: 1, 2, or up to " +
       maxSpan +
       " (never more than " +
       maxSpan +
       " and never more than the array length).\n" +
-      "- Use N>1 when those leading tokens are one unit: fixed expression, verb+clitic, verb+à/de+infinitive, reflexive se+verb, article/determiner+noun chunk, preposition+tight object, etc.\n" +
+      "- Use N>1 when those leading words are one unit: fixed expression, verb+clitic, verb+à/de+infinitive, reflexive se+verb, article/determiner+noun chunk, preposition+tight object, etc.\n" +
       "- Otherwise N must be 1.\n" +
-      "- Do not reorder tokens; count always starts from the first array element.\n" +
+      "- Do not reorder words; count always starts from the first array element.\n" +
       '- Reply with strict JSON only, e.g. {"count": 2}.\n\n' +
-      "Tokens:\n" +
+      "Words (aka tokens):\n" +
       payload
     )
   }
@@ -38,7 +38,7 @@
   }
 
   globalThis.LingoLeafPrompts = {
-    buildMergeNextSegmentPrompt,
+    buildPromptToIdentifyIdioms,
     buildTranslatePrompt,
   }
 })()

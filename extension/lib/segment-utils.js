@@ -202,12 +202,12 @@
   //   maxSpan — number, upper bound for count (e.g. 3).
   // Output:
   //   integer count, or null when parsing fails or count is out of range.
-  function extractMergeNextLeadCount(raw, maxSpan) {
+  function postProcessIdiomCountResponse(raw, maxSpan) {
     if (!raw || typeof raw !== "string") return null
     let s = raw.trim()
     const fence = /^```(?:json)?\s*([\s\S]*?)```$/im.exec(s)
     if (fence) s = fence[1].trim()
-    // Parses a single JSON object and validates `count`; helper for extractMergeNextLeadCount.
+    // Parses a single JSON object and validates `count`; helper for postProcessIdiomCountResponse.
     // Input:
     //   jsonStr — string.
     // Output:
@@ -309,7 +309,7 @@
     mergePageUrlIntoUrls,
     copyVocabRow,
     findVocabRowIndex,
-    extractMergeNextLeadCount,
+    postProcessIdiomCountResponse,
     extractJsonStringArray,
   }
 })()

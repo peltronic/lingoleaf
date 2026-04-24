@@ -8,8 +8,7 @@ importScripts(
   "lib/segmentation-pipeline.js",
 )
 
-const MENU_ID = "save-to-lingoleaf"
-const ACTION_MENU_USE_POPUP = "lingoleaf-use-popup-toolbar"
+const SAVE_TO_LINGOLEAF = "save-to-lingoleaf"
 const VOCABLIST_KEY = "lingoleafSaved"
 const SEGMENTING_KEY = "lingoleafSegmenting"
 const PANEL_MODE_KEY = "lingoleafPanelMode"
@@ -42,20 +41,11 @@ function registerContextMenu() {
           chrome.contextMenus.removeAll(() => {
             chrome.contextMenus.create(
               {
-                id: MENU_ID,
+                id: SAVE_TO_LINGOLEAF,
                 title: "Save to LingoLeaf",
                 contexts: ["selection"],
               },
-              () => {
-                chrome.contextMenus.create(
-                  {
-                    id: ACTION_MENU_USE_POPUP,
-                    title: "Use popup for toolbar icon",
-                    contexts: ["action"],
-                  },
-                  () => resolve(),
-                )
-              },
+              () => resolve(),
             )
           })
         }),
@@ -163,34 +153,25 @@ async function setTranslations(vocabRows) {
 chrome.contextMenus.onClicked.addListener((info) => {
   // %HERE 0423
   void (async () => {
-    if (info.menuItemId === ACTION_MENU_USE_POPUP) {
-      await chrome.storage.local.set({ [PANEL_MODE_KEY]: "popup" })
-      await applyPanelMode("popup")
-      return
-    }
+    const baseTime = Date.now()
+    const pageUrl = info.pageUrl || ""
 
-    if (info.menuItemId !== MENU_ID) return
+    if (info.menuItemId !== SAVE_TO_LINGOLEAF) return
 
+    // Text selection in the current page
     const rawSelection = (info.selectionText || "").trim()
     if (!rawSelection) return
 
-    const pageUrl = info.pageUrl || ""
-
-    const { [VOCABLIST_KEY]: existing = [] } =
-      await chrome.storage.local.get(VOCABLIST_KEY)
-    const baseTime = Date.now()
+    const { [VOCABLIST_KEY]: existing = [] } = await chrome.storage.local.get(VOCABLIST_KEY)
 
     const shouldSegmentSelection = segmentUtils.shouldSegmentSelection(rawSelection, SEGMENT_CONFIG)
-    console.log('HERE.A')
 
     // Long selection: Ollama merge stream + per-word upsert in `try` / `catch`. Short selection: `else` (single phrase, no segmentation).
     if (shouldSegmentSelection) {
-      console.log('HERE.Z1')
       const saveSessionId = crypto.randomUUID()
       const accumulated = []
       let newOrdinal = 0
       let clearedSegmentingBanner = false
-      console.log('HERE.B')
 
       // indicate that we are segmenting the selection
       await chrome.storage.local.set({ [SEGMENTING_KEY]: { active: true } })
@@ -215,7 +196,7 @@ chrome.contextMenus.onClicked.addListener((info) => {
 
           const normalizedAccumulated = accumulated.map((e) => segmentUtils.copyVocabRow(e))
 
-          const idx = segmentUtils.findVocabRowIndex(normalizedAccumulated, word)
+          let idx = segmentUtils.findVocabRowIndex(normalizedAccumulated, word)
           if (idx >= 0) {
             // word aleady exists, just add url if unique
             const u = pageUrl.trim()
@@ -227,12 +208,12 @@ chrome.contextMenus.onClicked.addListener((info) => {
             accumulated.push(...normalizedAccumulated)
           } else {
             // word not found in accumulated, check currentVocablist
-            const ri = segmentUtils.findVocabRowIndex(currentVocablist, word)
-            if (ri >= 0) {
+            idx = segmentUtils.findVocabRowIndex(currentVocablist, word)
+            if (idx >= 0) {
               const u = pageUrl.trim()
-              const base = currentVocablist[ri].urls || []
+              const base = currentVocablist[idx].urls || []
               if (!segmentUtils.isDuplicatePageUrl(base, u) && u.length) {
-                currentVocablist[ri].urls = [...currentVocablist[ri].urls || [], u]
+                currentVocablist[idx].urls = [...currentVocablist[idx].urls || [], u]
               }
               accumulated.length = 0
               accumulated.push(...normalizedAccumulated)
@@ -284,17 +265,17 @@ chrome.contextMenus.onClicked.addListener((info) => {
       const normalizedExisting = existing.map((e) => segmentUtils.copyVocabRow(e))
 
       // No segmentation, just a single word or phrase
-      const dupIdx = segmentUtils.findVocabRowIndex(
+      const idx = segmentUtils.findVocabRowIndex(
         normalizedExisting,
         rawSelection,
       )
       // Short selection: merge URL onto the matching row, or prepend one new row (same upsert idea as the segmented loop).
-      if (dupIdx >= 0) {
+      if (idx >= 0) {
         const copy = [...normalizedExisting]
-        copy[dupIdx] = {
-          ...copy[dupIdx],
+        copy[idx] = {
+          ...copy[idx],
           urls: segmentUtils.mergePageUrlIntoUrls(
-            copy[dupIdx].urls || [],
+            copy[idx].urls || [],
             pageUrl,
           ),
         }

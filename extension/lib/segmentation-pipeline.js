@@ -6,7 +6,8 @@
   const MERGE_MAX_SPAN = 3
   const MERGE_LOOKAHEAD = 12
 
-  // Caps the token list by count and by approximate JSON length so merge prompts stay bounded.
+  // Caps the token list by count and by approximate JSON length so merge 
+  // prompts stay bounded.
   // Input:
   //   words — string[].
   //   maxItems — number from segment config.
@@ -22,7 +23,8 @@
     return clipped
   }
 
-  // Yields each merged or single-token surface string as soon as it is decided (one Ollama call per yield, except single-token inputs).
+  // Yields each merged or single-token surface string as soon as it is decided 
+  // (one Ollama call per yield, except single-token inputs).
   // Input:
   //   rawSelection — string.
   //   opts — `{ baseUrl, model, segmentCfg }` with maxItems and maxChars on segmentCfg.
@@ -42,6 +44,7 @@
       return
     }
 
+    // Select the next N words as an idiom candidate
     const headWords = clipWordsForMerge(
       allWords,
       segmentCfg.maxItems,
@@ -51,6 +54,7 @@
     let i = 0
 
     while (i < headWords.length) {
+      // loop through the head words with lookahead
       const window = headWords.slice(
         i,
         Math.min(i + MERGE_LOOKAHEAD, headWords.length),
@@ -58,24 +62,24 @@
       let count = 1
       try {
         if (!window.length) {
-          count = 1
+          count = 1 // no window, so count is 1
         } else {
-          const assistantText = await ollamaApi.ollamaChat({
+          // returns N next words that compose an idiom or phrase (JSON format)
+          const idiomCount = await ollamaApi.ollamaChat({
             baseUrl,
             model,
-            content: prompts.buildMergeNextSegmentPrompt({
+            content: prompts.buildPromptToIdentifyIdioms({
               words: window,
               maxSpan: MERGE_MAX_SPAN,
             }),
             temperature: 0.1,
           })
-          const parsed = segmentUtils.extractMergeNextLeadCount(
-            assistantText,
+          const parsed = segmentUtils.postProcessIdiomCountResponse(
+            idiomCount,
             MERGE_MAX_SPAN,
           )
           const cap = Math.min(MERGE_MAX_SPAN, window.length)
-          count =
-            parsed == null ? 1 : Math.min(Math.max(1, parsed), cap)
+          count = parsed == null ? 1 : Math.min(Math.max(1, parsed), cap)
         }
       } catch {
         count = 1

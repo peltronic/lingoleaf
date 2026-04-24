@@ -105,14 +105,14 @@
           const promptPayload = lib2Prompts.buildPhraseExtractPromptPayload({
             sentence: window.join(" "),
           })
-          const assistantText = await ollamaApi.ollamaChat({
+          const idiomCount = await ollamaApi.ollamaChat({
             baseUrl,
             model,
             content: JSON.stringify(promptPayload),
             temperature: 0.1,
           })
-          const parsed = segmentUtils.extractMergeNextLeadCount(
-            assistantText,
+          const parsed = segmentUtils.postProcessIdiomCountResponse(
+            idiomCount,
             MERGE_MAX_SPAN,
           )
           const cap = Math.min(MERGE_MAX_SPAN, window.length)
