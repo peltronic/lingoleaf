@@ -161,20 +161,20 @@
     return { ...row, urls: Array.isArray(row.urls) ? [...row.urls] : [] }
   }
 
-  // Finds a row index for save-time upsert: same normalized French as `word` means merge `urls`, not append a duplicate row.
+  // Finds a vocab row index by word match
   // Input:
-  //   entries — object[].
-  //   word — string.
+  //   vocabRows — object[]
+  //   word — string
   // Output:
   //   number index, or -1.
-  function findEntryIndexByNormalizedWord(entries, word) {
+  function findVocabRowIndex(vocabRows, word) {
     const k = normalizeForCompare(String(word || "").trim())
     if (!k) return -1
-    return entries.findIndex(
-      (e) =>
-        e &&
-        typeof e.word === "string" &&
-        normalizeForCompare(e.word.trim()) === k,
+    return vocabRows.findIndex(
+      (vw) =>
+        vw &&
+        typeof vw.word === "string" &&
+        normalizeForCompare(vw.word.trim()) === k,
     )
   }
 
@@ -308,7 +308,7 @@
     isDuplicatePageUrl,
     mergePageUrlIntoUrls,
     copyVocabRow,
-    findEntryIndexByNormalizedWord,
+    findVocabRowIndex,
     extractMergeNextLeadCount,
     extractJsonStringArray,
   }

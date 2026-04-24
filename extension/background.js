@@ -183,8 +183,9 @@ chrome.contextMenus.onClicked.addListener((info) => {
     const shouldSegmentSelection = segmentUtils.shouldSegmentSelection(rawSelection, SEGMENT_CONFIG)
     console.log('HERE.A')
 
-    // Same normalized French as an existing row → only append `pageUrl` to that row’s `urls`; otherwise a new list item (no post-pass merge).
+    // Long selection: Ollama merge stream + per-word upsert in `try` / `catch`. Short selection: `else` (single phrase, no segmentation).
     if (shouldSegmentSelection) {
+      console.log('HERE.Z1')
       const saveSessionId = crypto.randomUUID()
       const accumulated = []
       let newOrdinal = 0
@@ -214,26 +215,24 @@ chrome.contextMenus.onClicked.addListener((info) => {
 
           const normalizedAccumulated = accumulated.map((e) => segmentUtils.copyVocabRow(e))
 
-          const wi = segmentUtils.findEntryIndexByNormalizedWord(normalizedAccumulated, word)
-          if (wi >= 0) {
-            normalizedAccumulated[wi] = {
-              ...normalizedAccumulated[wi],
-              urls: segmentUtils.mergePageUrlIntoUrls(
-                normalizedAccumulated[wi].urls || [],
-                pageUrl,
-              ),
+          const idx = segmentUtils.findVocabRowIndex(normalizedAccumulated, word)
+          if (idx >= 0) {
+            // word aleady exists, just add url if unique
+            const u = pageUrl.trim()
+            const base = normalizedAccumulated[idx].urls || []
+            if (!segmentUtils.isDuplicatePageUrl(base, u) && u.length) {
+              normalizedAccumulated[idx].urls = [...normalizedAccumulated[idx].urls || [], u]
             }
             accumulated.length = 0
             accumulated.push(...normalizedAccumulated)
           } else {
-            const ri = segmentUtils.findEntryIndexByNormalizedWord(currentVocablist, word)
+            // word not found in accumulated, check currentVocablist
+            const ri = segmentUtils.findVocabRowIndex(currentVocablist, word)
             if (ri >= 0) {
-              currentVocablist[ri] = {
-                ...currentVocablist[ri],
-                urls: segmentUtils.mergePageUrlIntoUrls(
-                  currentVocablist[ri].urls || [],
-                  pageUrl,
-                ),
+              const u = pageUrl.trim()
+              const base = currentVocablist[ri].urls || []
+              if (!segmentUtils.isDuplicatePageUrl(base, u) && u.length) {
+                currentVocablist[ri].urls = [...currentVocablist[ri].urls || [], u]
               }
               accumulated.length = 0
               accumulated.push(...normalizedAccumulated)
@@ -252,7 +251,6 @@ chrome.contextMenus.onClicked.addListener((info) => {
           }
         }
         void setTranslations(accumulated).catch(() => {})
-        return
 
       } catch {
 
@@ -275,37 +273,41 @@ chrome.contextMenus.onClicked.addListener((info) => {
           })
           void setTranslations([fb]).catch(() => {})
         }
-        return
       } finally {
         await chrome.storage.local.remove(SEGMENTING_KEY).catch(() => {})
       }
-    }
 
-    const normalizedExisting = existing.map((e) => segmentUtils.copyVocabRow(e))
+    } else {
 
-    const dupIdx = segmentUtils.findEntryIndexByNormalizedWord(
-      normalizedExisting,
-      rawSelection,
-    )
-    // Short selection: merge URL onto the matching row, or prepend one new row (same upsert idea as the segmented loop).
-    if (dupIdx >= 0) {
-      const copy = [...normalizedExisting]
-      copy[dupIdx] = {
-        ...copy[dupIdx],
-        urls: segmentUtils.mergePageUrlIntoUrls(
-          copy[dupIdx].urls || [],
-          pageUrl,
-        ),
+      console.log('HERE.Z2')
+      // Short selection: no segmentation, just a single word or phrase
+      const normalizedExisting = existing.map((e) => segmentUtils.copyVocabRow(e))
+
+      // No segmentation, just a single word or phrase
+      const dupIdx = segmentUtils.findVocabRowIndex(
+        normalizedExisting,
+        rawSelection,
+      )
+      // Short selection: merge URL onto the matching row, or prepend one new row (same upsert idea as the segmented loop).
+      if (dupIdx >= 0) {
+        const copy = [...normalizedExisting]
+        copy[dupIdx] = {
+          ...copy[dupIdx],
+          urls: segmentUtils.mergePageUrlIntoUrls(
+            copy[dupIdx].urls || [],
+            pageUrl,
+          ),
+        }
+        await chrome.storage.local.set({ [VOCABLIST_KEY]: copy })
+        return
       }
-      await chrome.storage.local.set({ [VOCABLIST_KEY]: copy })
-      return
+
+      const vocabRow = segmentUtils.buildVocabRow(rawSelection, { pageUrl, baseTime, ordinal: 0 })
+      await chrome.storage.local.set({
+        [VOCABLIST_KEY]: [vocabRow, ...normalizedExisting],
+      })
+
+      void setTranslations([vocabRow]).catch(() => {})
     }
-
-    const vocabRow = segmentUtils.buildVocabRow(rawSelection, { pageUrl, baseTime, ordinal: 0 })
-    await chrome.storage.local.set({
-      [VOCABLIST_KEY]: [vocabRow, ...normalizedExisting],
-    })
-
-    void setTranslations([vocabRow]).catch(() => {})
   })().catch(() => {})
 })
