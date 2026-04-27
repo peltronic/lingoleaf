@@ -155,6 +155,7 @@ chrome.contextMenus.onClicked.addListener((info) => {
   void (async () => {
     const baseTime = Date.now()
     const pageUrl = info.pageUrl || ""
+    const saveSessionId = crypto.randomUUID()
 
     if (info.menuItemId !== SAVE_TO_LINGOLEAF) return
 
@@ -168,7 +169,6 @@ chrome.contextMenus.onClicked.addListener((info) => {
 
     // Long selection: Ollama merge stream + per-word upsert in `try` / `catch`. Short selection: `else` (single phrase, no segmentation).
     if (shouldSegmentSelection) {
-      const saveSessionId = crypto.randomUUID()
       const accumulated = []
       let newOrdinal = 0
       let clearedSegmentingBanner = false

@@ -69,12 +69,12 @@
     return m ? m[0] : ""
   }
 
-  // Tokenizes the selection into a word array for the merge model (punctuation stripped per token).
+  // Parses the input string into array of individual words
   // Input:
   //   text — string, raw user selection.
   // Output:
-  //   string[], non-empty tokens in order (empty array when nothing tokenizes).
-  function tokenizeSelectionToWords(text) {
+  //   string[], words/tokens in order
+  function parseWords(text) {
     const t = text.trim()
     if (!t) return []
     const out = []
@@ -196,18 +196,18 @@
     return out
   }
 
-  // Parses `{"count":N}` from incremental merge replies; count must be an integer from 1 through maxSpan.
+  // Parses/Cleans `{"count":N}` from incremental merge replies; count must be an integer from 1 through maxSpan.
   // Input:
   //   raw — string, model body.
   //   maxSpan — number, upper bound for count (e.g. 3).
   // Output:
-  //   integer count, or null when parsing fails or count is out of range.
-  function postProcessIdiomCountResponse(raw, maxSpan) {
+  //   The count or number of words identified as an idiom/phrase (integer count || null)
+  function postProcessIdentifyIdiomsResponse(raw, maxSpan) {
     if (!raw || typeof raw !== "string") return null
     let s = raw.trim()
     const fence = /^```(?:json)?\s*([\s\S]*?)```$/im.exec(s)
     if (fence) s = fence[1].trim()
-    // Parses a single JSON object and validates `count`; helper for postProcessIdiomCountResponse.
+    // Parses a single JSON object and validates `count`; helper for postProcessIdentifyIdiomsResponse.
     // Input:
     //   jsonStr — string.
     // Output:
@@ -301,7 +301,7 @@
     normalizeForCompare,
     looksLikeUnsplittedSelection,
     extractWordFromToken,
-    tokenizeSelectionToWords,
+    parseWords,
     materializeWordPartitionOrNull,
     dedupeSegmentsPreserveOrder,
     buildVocabRow,
@@ -309,7 +309,7 @@
     mergePageUrlIntoUrls,
     copyVocabRow,
     findVocabRowIndex,
-    postProcessIdiomCountResponse,
+    postProcessIdentifyIdiomsResponse,
     extractJsonStringArray,
   }
 })()

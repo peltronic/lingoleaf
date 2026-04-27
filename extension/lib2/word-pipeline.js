@@ -69,7 +69,7 @@
   // Given a list of vocabRows that represent individual words in one or more  sentences, identify 
   // idioms or phrases and replace the individual words that compose them with the new grouping
   // Input:
-  //   vocabRows — object[], each a vocabRow whose `word` is one surface word (same order as `tokenizeSelectionToWords` on that text).
+  //   vocabRows — object[], each a vocabRow whose `word` is one surface word (same order as `parseWords` on that text).
   //   opts — optional object; all keys optional:
   //    - baseUrl — on `opts`, string, Ollama base URL for `ollamaChat` (optional; API defaults apply).
   //    - model — on `opts`, string, model id for `ollamaChat` (optional; API defaults apply).
@@ -111,7 +111,7 @@
             content: JSON.stringify(promptPayload),
             temperature: 0.1,
           })
-          const parsed = segmentUtils.postProcessIdiomCountResponse(
+          const parsed = segmentUtils.postProcessIdentifyIdiomsResponse(
             idiomCount,
             MERGE_MAX_SPAN,
           )

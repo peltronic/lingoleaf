@@ -6,15 +6,14 @@
   const MERGE_MAX_SPAN = 3
   const MERGE_LOOKAHEAD = 12
 
-  // Caps the token list by count and by approximate JSON length so merge 
-  // prompts stay bounded.
+  // Given a list of words, clip (slice) the list to a maximum length
   // Input:
   //   words — string[].
   //   maxItems — number from segment config.
   //   maxChars — number, max JSON length for the clipped array.
   // Output:
   //   string[], prefix of words (possibly shortened until JSON fits).
-  function clipWordsForMerge(words, maxItems, maxChars) {
+  function sliceWordArray(words, maxItems, maxChars) {
     const spanCap = maxItems * MERGE_MAX_SPAN
     let clipped = words.length > spanCap ? words.slice(0, spanCap) : words.slice()
     while (clipped.length > 1 && JSON.stringify(clipped).length > maxChars) {
@@ -23,7 +22,7 @@
     return clipped
   }
 
-  // Yields each merged or single-token surface string as soon as it is decided 
+  // Yields each merged or single-token surface (idiom/phrase) string as soon as it is decided 
   // (one Ollama call per yield, except single-token inputs).
   // Input:
   //   rawSelection — string.
@@ -34,64 +33,57 @@
     rawSelection,
     { baseUrl, model, segmentCfg },
   ) {
-    const allWords = segmentUtils.tokenizeSelectionToWords(rawSelection)
+    const allWords = segmentUtils.parseWords(rawSelection)
     if (!allWords.length) {
+      // no words
       yield rawSelection
       return
     }
     if (allWords.length === 1) {
+      // single word
       yield allWords[0]
       return
     }
 
-    // Select the next N words as an idiom candidate
-    const headWords = clipWordsForMerge(
-      allWords,
-      segmentCfg.maxItems,
-      segmentCfg.maxChars,
-    )
+    // Multiple Words: select the first N words as a candidateion idiom/phrase
+    const headWords = sliceWordArray( allWords, segmentCfg.maxItems, segmentCfg.maxChars )
     const seen = new Set()
-    let i = 0
 
+    let i = 0
     while (i < headWords.length) {
-      // loop through the head words with lookahead
-      const window = headWords.slice(
-        i,
-        Math.min(i + MERGE_LOOKAHEAD, headWords.length),
-      )
-      let count = 1
+
+      // lookahead window
+      const window = headWords.slice( i, Math.min(i+MERGE_LOOKAHEAD, headWords.length))
+      const cap = Math.min(MERGE_MAX_SPAN, window.length)
+
+      let idiomCount = 1
+
       try {
         if (!window.length) {
-          count = 1 // no window, so count is 1
+          idiomCount = 1 // no window, so count is 1
         } else {
           // returns N next words that compose an idiom or phrase (JSON format)
-          const idiomCount = await ollamaApi.ollamaChat({
-            baseUrl,
+          const promptWithContent = prompts.buildPromptToIdentifyIdioms({words: window, maxSpan: MERGE_MAX_SPAN})
+          const responseJSON = await ollamaApi.ollamaChat({
+            baseUrl, // %FIXME %TODO: use DI
             model,
-            content: prompts.buildPromptToIdentifyIdioms({
-              words: window,
-              maxSpan: MERGE_MAX_SPAN,
-            }),
+            content: promptWithContent,
             temperature: 0.1,
           })
-          const parsed = segmentUtils.postProcessIdiomCountResponse(
-            idiomCount,
-            MERGE_MAX_SPAN,
-          )
-          const cap = Math.min(MERGE_MAX_SPAN, window.length)
-          count = parsed == null ? 1 : Math.min(Math.max(1, parsed), cap)
+          const _count = segmentUtils.postProcessIdentifyIdiomsResponse(responseJSON, MERGE_MAX_SPAN)
+          idiomCount = _count == null ? 1 : Math.min(Math.max(1, _count), cap)
         }
       } catch {
-        count = 1
+        idiomCount = 1
       }
-      count = Math.max(1, Math.min(count, MERGE_MAX_SPAN, headWords.length - i))
-      const surface = headWords.slice(i, i + count).join(" ")
-      const key = segmentUtils.normalizeForCompare(surface)
+      idiomCount = Math.max(1, Math.min(idiomCount, MERGE_MAX_SPAN, headWords.length - i))
+      const idiomStr = headWords.slice(i, i + idiomCount).join(" ")
+      const key = segmentUtils.normalizeForCompare(idiomStr)
       if (key && !seen.has(key)) {
         seen.add(key)
-        yield surface
+        yield idiomStr
       }
-      i += count
+      i += idiomCount // skip over the idiom/phrase just identified
     }
 
     for (let j = headWords.length; j < allWords.length; j += 1) {
