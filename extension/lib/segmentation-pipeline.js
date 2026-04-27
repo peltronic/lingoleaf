@@ -28,7 +28,7 @@
   //   rawSelection — string.
   //   opts — `{ baseUrl, model, segmentCfg }` with maxItems and maxChars on segmentCfg.
   // Output:
-  //   async generator yields string, French phrase or word in reading order (yields rawSelection when tokenization is empty).
+  //   async generator yields string, French phrase or word in reading order
   async function* streamLexicalPieces(
     rawSelection,
     { baseUrl, model, segmentCfg },
@@ -86,6 +86,8 @@
       i += idiomCount // skip over the idiom/phrase just identified
     }
 
+    // In the case of a long selection (allWords.length > headWords.length), yield any 
+    // remaining words that are not part of an idiom/phrase (NOTE only yields single words)
     for (let j = headWords.length; j < allWords.length; j += 1) {
       const w = allWords[j]
       const key = segmentUtils.normalizeForCompare(w)

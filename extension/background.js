@@ -177,6 +177,7 @@ chrome.contextMenus.onClicked.addListener((info) => {
       await chrome.storage.local.set({ [SEGMENTING_KEY]: { active: true } })
 
       try {
+        // NOTE: word here can be a single word or a phrase/idiom
         for await (const word of segmentationPipeline.streamLexicalPieces(
           rawSelection,
           {
@@ -185,11 +186,11 @@ chrome.contextMenus.onClicked.addListener((info) => {
             segmentCfg: SEGMENT_CONFIG,
           },
         )) {
-          console.log('HERE.C')
           // Retrieve the full list of saved words
           const { [VOCABLIST_KEY]: currentVocablistRaw = [] } = await chrome.storage.local.get(VOCABLIST_KEY)
 
-          // filter out any rows that are part of the current save session; then shallow-copy so we can mutate without aliasing storage
+          // filter out any rows that are part of the current save session; 
+          // then shallow-copy so we can mutate without aliasing storage
           const currentVocablist = currentVocablistRaw.filter(
             (e) => !e.saveSessionId || e.saveSessionId !== saveSessionId,
           ).map((e) => segmentUtils.copyVocabRow(e))

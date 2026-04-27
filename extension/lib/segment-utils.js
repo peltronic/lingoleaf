@@ -151,12 +151,14 @@
     return [...base, u]
   }
 
-  // Shallow-copies a vocabRow so the `urls` array is not shared (safe before mutating rows in memory).
+  // Shallow-copies a vocabRow with a dedicated copy of the `urls` array
+  // (1-level deep copy)
   // Input:
   //   row — object from storage, or any value.
   // Output:
   //   a plain object with `urls` as a new array, or the original value if not a non-array object.
   function copyVocabRow(row) {
+    // verify row is a non-array object
     if (!row || typeof row !== "object" || Array.isArray(row)) return row
     return { ...row, urls: Array.isArray(row.urls) ? [...row.urls] : [] }
   }
