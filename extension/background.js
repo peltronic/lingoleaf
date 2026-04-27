@@ -154,7 +154,7 @@ chrome.contextMenus.onClicked.addListener((info) => {
   // %HERE 0423
   void (async () => {
     const baseTime = Date.now()
-    const pageUrl = info.pageUrl || ""
+    const pageUrl = (info.pageUrl || "").trim()
     const saveSessionId = crypto.randomUUID()
 
     if (info.menuItemId !== SAVE_TO_LINGOLEAF) return
@@ -195,34 +195,28 @@ chrome.contextMenus.onClicked.addListener((info) => {
             (e) => !e.saveSessionId || e.saveSessionId !== saveSessionId,
           ).map((e) => segmentUtils.copyVocabRow(e))
 
-          const normalizedAccumulated = accumulated.map((e) => segmentUtils.copyVocabRow(e))
-
-          let idx = segmentUtils.findVocabRowIndex(normalizedAccumulated, word)
+          let idx = segmentUtils.findVocabRowIndex(accumulated, word)
           if (idx >= 0) {
             // word aleady exists, just add url if unique
-            const u = pageUrl.trim()
-            const base = normalizedAccumulated[idx].urls || []
-            if (!segmentUtils.isDuplicatePageUrl(base, u) && u.length) {
-              normalizedAccumulated[idx].urls = [...normalizedAccumulated[idx].urls || [], u]
+            const existingVocabRow = {...accumulated[idx]}
+            const base = existingVocabRow.urls || []
+            if (!segmentUtils.isDuplicatePageUrl(base, pageUrl) && pageUrl.length) {
+              existingVocabRow.urls = [...existingVocabRow.urls || [], pageUrl]
             }
-            accumulated.length = 0
-            accumulated.push(...normalizedAccumulated)
+            accumulated[idx] = existingVocabRow // update/replace
           } else {
-            // word not found in accumulated, check currentVocablist
+            // word not found in accumulated (memory working list), check currentVocablist (session storage, post-filters)
             idx = segmentUtils.findVocabRowIndex(currentVocablist, word)
             if (idx >= 0) {
-              const u = pageUrl.trim()
+              // word found in currentVocablist, add url if unique
               const base = currentVocablist[idx].urls || []
-              if (!segmentUtils.isDuplicatePageUrl(base, u) && u.length) {
-                currentVocablist[idx].urls = [...currentVocablist[idx].urls || [], u]
+              if (!segmentUtils.isDuplicatePageUrl(base, pageUrl) && pageUrl.length) {
+                currentVocablist[idx].urls = [...currentVocablist[idx].urls || [], pageUrl]
               }
-              accumulated.length = 0
-              accumulated.push(...normalizedAccumulated)
             } else {
-              normalizedAccumulated.push(segmentUtils.buildVocabRow(word, { pageUrl, baseTime, ordinal: newOrdinal, saveSessionId }))
+              // word not found in currentVocablist nor in accumulated => build new row
+              accumulated.push(segmentUtils.buildVocabRow(word, { pageUrl, baseTime, ordinal: newOrdinal, saveSessionId }))
               newOrdinal += 1
-              accumulated.length = 0
-              accumulated.push(...normalizedAccumulated)
             }
           }
 
