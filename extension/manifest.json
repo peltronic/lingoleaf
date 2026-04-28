@@ -4,7 +4,7 @@
   "version": "0.1.2",
   "description": "A lightweight French-to-English translation assistant powered by local AI",
   "minimum_chrome_version": "116",
-  "permissions": ["contextMenus", "storage", "sidePanel"],
+  "permissions": ["contextMenus", "storage", "sidePanel", "tabs"],
   "host_permissions": ["http://127.0.0.1:11434/*", "http://localhost:11434/*"],
   "background": {
     "service_worker": "background.js"

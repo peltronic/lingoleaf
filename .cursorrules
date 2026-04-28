@@ -7,11 +7,11 @@
   - what the function does
   - how it is used
   - why it exists (user/UX or architectural reason)
-  - (Exception: `extension/lib/` named functions also use Input/Output lines as in **Lib function contracts** below.)
+  - use Input/Output lines as in **Lib function contracts** below.
 - Prefer intent-level comments over line-by-line logic narration.
 - Avoid obvious comments and avoid restating code syntax.
 
-## Lib function contracts (`extension/lib/`)
+## Lib and other function contracts (`extension/lib/` etc)
 - Above every **named** function (including nested helpers), document **inputs** and **return value** using `//` lines.
 - Use explicit labels so it scans quickly:
   - `// Input:` on its own line, then **one argument per line** (name — type/shape and short meaning).

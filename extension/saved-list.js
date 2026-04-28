@@ -76,6 +76,13 @@ function urlsFromItem(item) {
   return []
 }
 
+// Side panel: vocab row qualifies if `urls[]` lists the active browser tab URL (string compare after trim).
+function isVocabRowSavedFromPage(row, tabUrlNormalized) {
+  const t = typeof tabUrlNormalized === "string" ? tabUrlNormalized.trim() : ""
+  if (!t) return false
+  return urlsFromItem(row).some((u) => u.trim() === t)
+}
+
 function sameEntry(a, b) {
   if (a.id && b.id) return a.id === b.id
   const urlsA = urlsFromItem(a).slice().sort().join("\n")
@@ -90,7 +97,13 @@ async function deleteEntry(item) {
   await chrome.storage.local.set({ [VOCABLIST_KEY]: next })
 }
 
-function render(entries, showSegmentingBanner) {
+const EMPTY_DEFAULT_HINT =
+  "No saved words yet. Select text, right-click, choose “Save to LingoLeaf”."
+const EMPTY_SITE_FILTER_HINT =
+  "No saved phrases for this page in LingoLeaf. Save text from this tab, switch tabs, or use the toolbar popup for the full list."
+
+function render(entries, showSegmentingBanner, options = {}) {
+  const siteFilteredEmpty = Boolean(options.siteFilteredEmpty)
   const list = document.getElementById("list")
   const empty = document.getElementById("empty")
   const banner = document.getElementById("segmenting-banner")
@@ -101,6 +114,7 @@ function render(entries, showSegmentingBanner) {
 
   if (!entries.length && !showSegmentingBanner) {
     empty.hidden = false
+    empty.textContent = siteFilteredEmpty ? EMPTY_SITE_FILTER_HINT : EMPTY_DEFAULT_HINT
     return
   }
   empty.hidden = true
@@ -184,13 +198,54 @@ function render(entries, showSegmentingBanner) {
   }
 }
 
+function isThisSidePanelUI() {
+  return Boolean(document.body?.classList?.contains("sidepanel-host"))
+}
+
 async function load() {
   const data = await chrome.storage.local.get([VOCABLIST_KEY, SEGMENTING_KEY])
-  const entries = data[VOCABLIST_KEY] || []
+  const rawEntries = data[VOCABLIST_KEY] || []
   const showSegmentingBanner = !!(
     data[SEGMENTING_KEY] && data[SEGMENTING_KEY].active
   )
-  render(entries, showSegmentingBanner)
+  let entries = rawEntries
+  let siteFilteredEmpty = false
+  if (isThisSidePanelUI()) {
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
+      const tabUrl = tabs[0]?.url
+      if (!tabUrl || !String(tabUrl).trim()) {
+        entries = []
+        siteFilteredEmpty = rawEntries.length > 0
+      } else {
+        const t = tabUrl.trim()
+        entries = rawEntries.filter((row) =>
+          isVocabRowSavedFromPage(row, t),
+        )
+        siteFilteredEmpty = entries.length === 0 && rawEntries.length > 0
+      }
+    } catch {
+      entries = []
+      siteFilteredEmpty = rawEntries.length > 0
+    }
+  }
+  render(entries, showSegmentingBanner, { siteFilteredEmpty })
+}
+
+function registerTabListeners() {
+  if (!isThisSidePanelUI()) return
+  const rerun = () => void load()
+  chrome.tabs.onActivated.addListener(() => rerun())
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.url === undefined) return
+    void chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then((tabs) => {
+        if (!tabs?.length || tabs[0]?.id !== tabId) return
+        rerun()
+      })
+      .catch(() => {})
+  })
 }
 
 async function renderBuildMeta() {
@@ -287,5 +342,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 })
 
+registerTabListeners()
 load()
 renderBuildMeta()
