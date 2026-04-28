@@ -1,33 +1,36 @@
+// Libs are plain scripts (no bundler): `importScripts` runs each file in this service worker's shared global scope.
+// Each `lib/*.js` registers APIs on `globalThis` (e.g. `LingoLeafSegmentUtils`); we read them below—same pattern Node tests use when they `require` those files.
 importScripts(
   "lib/segment-utils.js",
   "lib/prompts.js",
   "lib/ollama-api.js",
-  "lib/segmentation-pipeline.js"
-);
+  "lib/translation-pipeline.js",
+  "lib/segmentation-pipeline.js",
+)
 
-const MENU_ID = "save-to-lingoleaf";
-const ACTION_MENU_USE_POPUP = "lingoleaf-use-popup-toolbar";
-const STORAGE_KEY = "lingoleafSaved";
-const SEGMENTING_KEY = "lingoleafSegmenting";
-const PANEL_MODE_KEY = "lingoleafPanelMode";
+const SAVE_TO_LINGOLEAF = "save-to-lingoleaf"
+const VOCABLIST_KEY = "lingoleafSaved"
+const SEGMENTING_KEY = "lingoleafSegmenting"
+const PANEL_MODE_KEY = "lingoleafPanelMode"
 
-const OLLAMA_BASE = "http://127.0.0.1:11434";
-const OLLAMA_MODEL = "qwen2.5:3b";
+const OLLAMA_BASE = "http://127.0.0.1:11434"
+const OLLAMA_MODEL = "qwen2.5:3b"
 
 const SEGMENT_CONFIG = {
   minWords: 4,
   maxChars: 1500,
   maxItems: 40,
-  punctuationMinWords: 3
-};
-const TRANSLATE_MAX_CHARS = 2000;
+  punctuationMinWords: 3,
+}
+const TRANSLATE_MAX_CHARS = 2000
 
-const segmentUtils = globalThis.LingoLeafSegmentUtils;
-const ollamaApi = globalThis.LingoLeafOllamaApi;
-const segmentationPipeline = globalThis.LingoLeafSegmentationPipeline;
+const segmentUtils = globalThis.LingoLeafSegmentUtils
+const ollamaApi = globalThis.LingoLeafOllamaApi
+const translationPipeline = globalThis.LingoLeafTranslationPipeline
+const segmentationPipeline = globalThis.LingoLeafSegmentationPipeline
 
 // Serializes menu rebuilds so concurrent removeAll/create races cannot duplicate ids.
-let contextMenuChain = Promise.resolve();
+let contextMenuChain = Promise.resolve()
 
 // Rebuilds extension context menus safely; used at install/startup to keep ids consistent across reloads.
 function registerContextMenu() {
@@ -38,212 +41,249 @@ function registerContextMenu() {
           chrome.contextMenus.removeAll(() => {
             chrome.contextMenus.create(
               {
-                id: MENU_ID,
+                id: SAVE_TO_LINGOLEAF,
                 title: "Save to LingoLeaf",
-                contexts: ["selection"]
+                contexts: ["selection"],
               },
-              () => {
-                chrome.contextMenus.create(
-                  {
-                    id: ACTION_MENU_USE_POPUP,
-                    title: "Use popup for toolbar icon",
-                    contexts: ["action"]
-                  },
-                  () => resolve()
-                );
-              }
-            );
-          });
-        })
+              () => resolve(),
+            )
+          })
+        }),
     )
-    .catch(() => {});
+    .catch(() => {})
 }
 
 // Applies popup vs side panel behavior; used on startup and when UI mode is toggled.
 async function applyPanelMode(mode) {
-  const useSidePanel = mode === "sidepanel";
+  const useSidePanel = mode === "sidepanel"
   try {
-    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: useSidePanel });
+    await chrome.sidePanel.setPanelBehavior({
+      openPanelOnActionClick: useSidePanel,
+    })
   } catch {
     /* ignore if API unavailable */
   }
   if (useSidePanel) {
-    await chrome.action.setPopup({ popup: "" });
+    await chrome.action.setPopup({ popup: "" })
   } else {
-    await chrome.action.setPopup({ popup: "popup.html" });
+    await chrome.action.setPopup({ popup: "popup.html" })
   }
 }
 
 // Restores persisted panel mode from local storage; needed so toolbar behavior survives browser restarts.
 async function initPanelMode() {
-  const { [PANEL_MODE_KEY]: stored } = await chrome.storage.local.get(PANEL_MODE_KEY);
-  const mode = stored === "sidepanel" ? "sidepanel" : "popup";
-  await applyPanelMode(mode);
+  const { [PANEL_MODE_KEY]: stored } =
+    await chrome.storage.local.get(PANEL_MODE_KEY)
+  const mode = stored === "sidepanel" ? "sidepanel" : "popup"
+  await applyPanelMode(mode)
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  registerContextMenu();
-  initPanelMode();
-});
+  registerContextMenu()
+  initPanelMode()
+})
 chrome.runtime.onStartup.addListener(() => {
-  registerContextMenu();
-  initPanelMode();
-});
+  registerContextMenu()
+  initPanelMode()
+})
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message && message.type === "set-panel-mode") {
-    (async () => {
-      const mode = message.mode === "sidepanel" ? "sidepanel" : "popup";
-      await chrome.storage.local.set({ [PANEL_MODE_KEY]: mode });
-      await applyPanelMode(mode);
-      sendResponse({ ok: true });
-    })().catch(() => sendResponse({ ok: false }));
-    return true;
-  }
+  if (!message || typeof message.type !== "string") return
 
-  if (!message || message.type !== "backfill-missing-translations") return;
+  switch (message.type) {
+    case "set-panel-mode":
+      ;(async () => {
+        const mode = message.mode === "sidepanel" ? "sidepanel" : "popup"
+        await chrome.storage.local.set({ [PANEL_MODE_KEY]: mode })
+        await applyPanelMode(mode)
+        sendResponse({ ok: true })
+      })().catch(() => sendResponse({ ok: false }))
+      return true
 
-  // Backfills missing translations in saved entries; triggered by popup/sidepanel "Fill missing" button.
-  (async () => {
-    const { [STORAGE_KEY]: existing = [] } = await chrome.storage.local.get(STORAGE_KEY);
-    const updated = [];
-    let filledCount = 0;
-
-    for (const item of existing) {
-      if (item && item.word && !item.translation) {
-        let translation = "";
-        try {
-          translation = await ollamaApi.translateToEnglish({
+    // Backfills missing translations in saved entries; triggered by popup/sidepanel "Fill missing" button.
+    case "backfill-missing-translations":
+      ;(async () => {
+        const { [VOCABLIST_KEY]: existing = [] } = await chrome.storage.local.get(VOCABLIST_KEY)
+        const { updated, filledCount } =
+          await translationPipeline.fillMissingTranslations(existing, {
             baseUrl: OLLAMA_BASE,
             model: OLLAMA_MODEL,
-            text: item.word,
-            maxChars: TRANSLATE_MAX_CHARS
-          });
-        } catch {
-          translation = "";
-        }
-        if (translation) filledCount += 1;
-        updated.push({ ...item, translation, translationPending: false });
-      } else {
-        updated.push(item);
-      }
-    }
+            maxChars: TRANSLATE_MAX_CHARS,
+          })
+        await chrome.storage.local.set({ [VOCABLIST_KEY]: updated })
+        sendResponse({ ok: true, filledCount })
+      })().catch(() => sendResponse({ ok: false, filledCount: 0 }))
+      return true
 
-    await chrome.storage.local.set({ [STORAGE_KEY]: updated });
-    sendResponse({ ok: true, filledCount });
-  })().catch(() => sendResponse({ ok: false, filledCount: 0 }));
+    default:
+      return
+  }
+})
 
-  return true;
-});
-
-// Writes each row’s English gloss by id; one Ollama request per row (not batched). Runs after the list is saved so the UI can show French first.
-async function translateSavedEntriesInBackground(entries) {
-  for (const entry of entries) {
-    if (!entry || !entry.id || !entry.word) continue;
-    let translation = "";
+// Writes each row’s English gloss by id; one Ollama request per row (not batched). 
+// Runs after the list is saved so the UI can show French first.
+async function setTranslations(vocabRows) {
+  for (const vr of vocabRows) {
+    if (!vr || !vr.id || !vr.word) continue
+    let translation = ""
     try {
       translation = await ollamaApi.translateToEnglish({
         baseUrl: OLLAMA_BASE,
         model: OLLAMA_MODEL,
-        text: entry.word,
-        maxChars: TRANSLATE_MAX_CHARS
-      });
+        text: vr.word,
+        maxChars: TRANSLATE_MAX_CHARS,
+      })
     } catch {
-      translation = "";
+      translation = ""
     }
-    const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY);
-    const idx = list.findIndex((e) => e && e.id === entry.id);
-    if (idx < 0) continue;
-    const copy = [...list];
-    copy[idx] = { ...copy[idx], translation, translationPending: false };
-    await chrome.storage.local.set({ [STORAGE_KEY]: copy });
+    const { [VOCABLIST_KEY]: list = [] } = await chrome.storage.local.get(VOCABLIST_KEY)
+    const idx = list.findIndex((e) => e && e.id === vr.id)
+    if (idx < 0) continue
+    const copy = [...list]
+    copy[idx] = {
+      ...copy[idx],
+      translation,
+      translationPending: false,
+    }
+    await chrome.storage.local.set({ [VOCABLIST_KEY]: copy })
   }
 }
 
 // Handles context menu saves: optional segmentation, prepend rows with pending translations, then translate each row in the background.
 chrome.contextMenus.onClicked.addListener((info) => {
+  // %HERE 0423
   void (async () => {
-    if (info.menuItemId === ACTION_MENU_USE_POPUP) {
-      await chrome.storage.local.set({ [PANEL_MODE_KEY]: "popup" });
-      await applyPanelMode("popup");
-      return;
-    }
+    const baseTime = Date.now()
+    const pageUrl = (info.pageUrl || "").trim()
+    const saveSessionId = crypto.randomUUID()
 
-    if (info.menuItemId !== MENU_ID) return;
+    if (info.menuItemId !== SAVE_TO_LINGOLEAF) return
 
-    const rawSelection = (info.selectionText || "").trim();
-    const pageUrl = info.pageUrl || "";
-    if (!rawSelection) return;
+    // Text selection in the current page
+    const rawSelection = (info.selectionText || "").trim()
+    if (!rawSelection) return
 
-    const { [STORAGE_KEY]: existing = [] } = await chrome.storage.local.get(STORAGE_KEY);
-    const baseTime = Date.now();
+    const { [VOCABLIST_KEY]: existing = [] } = await chrome.storage.local.get(VOCABLIST_KEY)
 
-    const buildEntry = (word, idx, saveSessionId) => ({
-      id: crypto.randomUUID(),
-      word,
-      translation: "",
-      translationPending: true,
-      url: pageUrl,
-      savedAt: baseTime + idx,
-      ...(saveSessionId ? { saveSessionId } : {})
-    });
+    const shouldSegmentSelection = segmentUtils.shouldSegmentSelection(rawSelection, SEGMENT_CONFIG)
 
-    if (segmentUtils.shouldSegmentSelection(rawSelection, SEGMENT_CONFIG)) {
-      const saveSessionId = crypto.randomUUID();
-      const accumulated = [];
-      const persistSessionBatch = async () => {
-        const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY);
-        const rest = list.filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId);
-        await chrome.storage.local.set({
-          [STORAGE_KEY]: [...accumulated, ...rest]
-        });
-      };
+    // Long selection: Ollama merge stream + per-word upsert in `try` / `catch`. Short selection: `else` (single phrase, no segmentation).
+    if (shouldSegmentSelection) {
+      const accumulated = []
+      let newOrdinal = 0
+      let clearedSegmentingBanner = false
 
-      await chrome.storage.local.set({ [SEGMENTING_KEY]: { active: true } });
+      // indicate that we are segmenting the selection
+      await chrome.storage.local.set({ [SEGMENTING_KEY]: { active: true } })
+
       try {
-        let idx = 0;
-        for await (const word of segmentationPipeline.streamLexicalPieces(rawSelection, {
-          baseUrl: OLLAMA_BASE,
-          model: OLLAMA_MODEL,
-          segmentCfg: SEGMENT_CONFIG
-        })) {
-          accumulated.push(buildEntry(word, idx, saveSessionId));
-          idx += 1;
-          await persistSessionBatch();
-          if (accumulated.length === 1) {
-            await chrome.storage.local.remove(SEGMENTING_KEY);
+        // NOTE: word here can be a single word or a phrase/idiom
+        for await (const word of segmentationPipeline.streamLexicalPieces(
+          rawSelection,
+          {
+            baseUrl: OLLAMA_BASE,
+            model: OLLAMA_MODEL,
+            segmentCfg: SEGMENT_CONFIG,
+          },
+        )) {
+          // Retrieve the full list of saved words
+          const { [VOCABLIST_KEY]: currentVocablistRaw = [] } = await chrome.storage.local.get(VOCABLIST_KEY)
+
+          // filter out any rows that are part of the current save session; 
+          // then shallow-copy so we can mutate without aliasing storage
+          const currentVocablist = currentVocablistRaw.filter(
+            (e) => !e.saveSessionId || e.saveSessionId !== saveSessionId,
+          ).map((e) => segmentUtils.copyVocabRow(e))
+
+          let idx = segmentUtils.findVocabRowIndex(accumulated, word)
+          if (idx >= 0) {
+            // word aleady exists, just add url if unique
+            const existingVocabRow = {...accumulated[idx]}
+            const base = existingVocabRow.urls || []
+            if (!segmentUtils.isDuplicatePageUrl(base, pageUrl) && pageUrl.length) {
+              existingVocabRow.urls = [...existingVocabRow.urls || [], pageUrl]
+            }
+            accumulated[idx] = existingVocabRow // update/replace
+          } else {
+            // word not found in accumulated (memory working list), check currentVocablist (session storage, post-filters)
+            idx = segmentUtils.findVocabRowIndex(currentVocablist, word)
+            if (idx >= 0) {
+              // word found in currentVocablist, add url if unique
+              const base = currentVocablist[idx].urls || []
+              if (!segmentUtils.isDuplicatePageUrl(base, pageUrl) && pageUrl.length) {
+                currentVocablist[idx].urls = [...currentVocablist[idx].urls || [], pageUrl]
+              }
+            } else {
+              // word not found in currentVocablist nor in accumulated => build new row
+              accumulated.push(segmentUtils.buildVocabRow(word, { pageUrl, baseTime, ordinal: newOrdinal, saveSessionId }))
+              newOrdinal += 1
+            }
+          }
+
+          await chrome.storage.local.set({ [VOCABLIST_KEY]: [...accumulated, ...currentVocablist] })
+          if (!clearedSegmentingBanner) {
+            await chrome.storage.local.remove(SEGMENTING_KEY)
+            clearedSegmentingBanner = true
           }
         }
-        void translateSavedEntriesInBackground(accumulated).catch(() => {});
-        return;
+        void setTranslations(accumulated).catch(() => {})
+
       } catch {
-        // merge/stream or storage failed — keep any rows already built, else save the whole selection as one card; always re-merge list without dup session rows.
-        const { [STORAGE_KEY]: list = [] } = await chrome.storage.local.get(STORAGE_KEY);
-        const rest = list.filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId);
+
+        // TL;DR: merge/stream or storage failed — keep any rows already built, else save the whole selection as one card; always re-merge list without dup session rows.
+        const { [VOCABLIST_KEY]: list = [] } =
+          await chrome.storage.local.get(VOCABLIST_KEY)
+        const rest = list
+          .map((e) => segmentUtils.copyVocabRow(e))
+          .filter((e) => !e.saveSessionId || e.saveSessionId !== saveSessionId)
         if (accumulated.length) {
+          const vocablist = accumulated.map((e) => segmentUtils.copyVocabRow(e))
           await chrome.storage.local.set({
-            [STORAGE_KEY]: [...accumulated, ...rest]
-          });
-          void translateSavedEntriesInBackground(accumulated).catch(() => {});
+            [VOCABLIST_KEY]: [...vocablist, ...rest],
+          })
+          void setTranslations(vocablist).catch(() => {})
         } else {
-          const fb = buildEntry(rawSelection, 0, saveSessionId);
+          const fb = segmentUtils.buildVocabRow(rawSelection, { pageUrl, baseTime, ordinal: 0, saveSessionId })
           await chrome.storage.local.set({
-            [STORAGE_KEY]: [fb, ...rest]
-          });
-          void translateSavedEntriesInBackground([fb]).catch(() => {});
+            [VOCABLIST_KEY]: [fb, ...rest],
+          })
+          void setTranslations([fb]).catch(() => {})
         }
-        return;
       } finally {
-        await chrome.storage.local.remove(SEGMENTING_KEY).catch(() => {});
+        await chrome.storage.local.remove(SEGMENTING_KEY).catch(() => {})
       }
+
+    } else {
+
+      console.log('HERE.Z2')
+      // Short selection: no segmentation, just a single word or phrase
+      const normalizedExisting = existing.map((e) => segmentUtils.copyVocabRow(e))
+
+      // No segmentation, just a single word or phrase
+      const idx = segmentUtils.findVocabRowIndex(
+        normalizedExisting,
+        rawSelection,
+      )
+      // Short selection: merge URL onto the matching row, or prepend one new row (same upsert idea as the segmented loop).
+      if (idx >= 0) {
+        const copy = [...normalizedExisting]
+        copy[idx] = {
+          ...copy[idx],
+          urls: segmentUtils.mergePageUrlIntoUrls(
+            copy[idx].urls || [],
+            pageUrl,
+          ),
+        }
+        await chrome.storage.local.set({ [VOCABLIST_KEY]: copy })
+        return
+      }
+
+      const vocabRow = segmentUtils.buildVocabRow(rawSelection, { pageUrl, baseTime, ordinal: 0 })
+      await chrome.storage.local.set({
+        [VOCABLIST_KEY]: [vocabRow, ...normalizedExisting],
+      })
+
+      void setTranslations([vocabRow]).catch(() => {})
     }
-
-    const newEntries = [buildEntry(rawSelection, 0)];
-
-    await chrome.storage.local.set({
-      [STORAGE_KEY]: [...newEntries, ...existing]
-    });
-
-    void translateSavedEntriesInBackground(newEntries).catch(() => {});
-  })().catch(() => {});
-});
+  })().catch(() => {})
+})

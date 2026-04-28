@@ -1,0 +1,36 @@
+;(() => {
+  // Assembles the phrase-extraction request object; `extract_phrases` is fixed (idioms + pattern rules) per product spec.
+  // Input:
+  //   sentence — string, full French text to analyze.
+  // Output:
+  //   object, JSON-serializable payload `{ sentence, extract_phrases, output_format }` (new object each call).
+  function buildPhraseExtractPromptPayload({ sentence }) {
+    return {
+      sentence: sentence == null ? "" : String(sentence),
+      extract_phrases: [
+        {
+          type: "idioms",
+          min_length: 2,
+          max_length: 4,
+        },
+        //{
+        //  type: "phrases_with_patterns",
+        //  patterns: [
+        //    {
+        //      pattern: "(?:m'attendais|y étais allée)",
+        //      min_matches: 2,
+        //      ignore_case: true,
+        //    },
+        //  ],
+        //},
+      ],
+      output_format: "list",
+    }
+  }
+
+  const api = { buildPhraseExtractPromptPayload }
+  globalThis.LingoLeafLib2Prompts = api
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = api
+  }
+})()

@@ -7,16 +7,22 @@
   - what the function does
   - how it is used
   - why it exists (user/UX or architectural reason)
-  - (Exception: `extension/lib/` named functions also use Params/Returns lines as in **Lib function contracts** below.)
+  - (Exception: `extension/lib/` named functions also use Input/Output lines as in **Lib function contracts** below.)
 - Prefer intent-level comments over line-by-line logic narration.
 - Avoid obvious comments and avoid restating code syntax.
 
 ## Lib function contracts (`extension/lib/`)
 - Above every **named** function (including nested helpers), document **inputs** and **return value** using `//` lines.
-- Use explicit labels so it scans quickly, for example:
-  - `// Params: ...` (types or shapes in plain language: string, string[], object fields)
-  - `// Returns: ...` (type + meaning; note `null`, empty string, or thrown errors when relevant)
-- One-line intent summary may precede Params/Returns; keep the whole block compact (avoid JSDoc `/** */`).
+- Use explicit labels so it scans quickly:
+  - `// Input:` on its own line, then **one argument per line** (name — type/shape and short meaning).
+  - `// Output:` on its own line, then the return type and meaning (note `null`, empty string, thrown errors, or each `yield` when relevant).
+- One-line intent summary may precede Input/Output; keep the whole block compact (avoid JSDoc `/** */`).
+
+## Naming (one word, one concept)
+- Each **domain term** (e.g. in names, comments, and tests) should map to **exactly one concept** across the repo; do not reuse the same word for different shapes or layers (for example a raw string chunk vs a **`vocabRow`** object in `word-pipeline.js`).
+- **Prefer consistent naming for the same kind of object throughout the app**, even if the object gains extra fields at a later stage (e.g. save-time metadata). Variation across call sites—`entry`, `row`, `item`, `e`—creates confusion that outweighs any precision gained from distinct names. A short inline comment is sufficient to clarify any stage-specific nuance.
+- A **`vocabRow`** is the canonical name for a vocabulary item at any stage: `{ word, translation, translationPending, urls }` in the pipeline; the same shape plus `id`, `savedAt`, `saveSessionId?` once persisted. Use `vocabRow` (or its plural `vocabRows`) everywhere—in variable names, comments, and tests—regardless of whether the object has been saved yet.
+- When introducing or touching an area, stay consistent with the canonical names already in use; if legacy naming diverges, fix it in a **small, dedicated** rename pass rather than piling on new synonyms.
 
 ## Refactoring boundaries
 - Keep `background.js` focused on Chrome extension orchestration:
@@ -41,6 +47,21 @@
   - fallback to simpler behavior if segmentation/parsing fails
 - Keep list storage updates explicit and predictable (`chrome.storage.local`).
 
+## Schema and storage (pre-prod)
+- The extension is not production-critical; it is fine to **reset** `chrome.storage` or ask developers to **clear** saved data when a shape changes, rather than keep backward-compatible bridges.
+- **Do not** add legacy-field shims, dual-read fallbacks, or ad hoc “migrate old `foo` to new `bar`” helpers (for example a lone `url` field vs `urls[]`) **unless** the user explicitly needs to preserve real users’ persisted data across releases. Prefer one canonical in-memory and on-disk shape; change the code and, if needed, the storage key or a documented “clear saved list in dev” step, instead of carrying compatibility layers.
+- If compatibility code is added for a good reason, keep it in one obvious place and **remove** it once a migration or sunset window is done—do not multiply helpers that only exist for obsolete on-disk rows.
+
 ## UI logic conventions
 - Share UI behavior across popup and sidepanel via common scripts/styles when feasible.
 - Keep markup differences minimal and intentional (mode-specific controls/hints only).
+
+## JavaScript style
+- Do not use semicolons at end-of-line in JavaScript, ever (omit `;` after statements).
+- For action/message dispatch (for example `message.type` handling), prefer `switch` statements over long `if/else if` chains when it improves clarity, even with a single case if more cases are expected.
+
+## Agent workflow (git + prompts)
+- Before running git commands that may **update the working tree**, **reset/revert** files, or **create commits**, confirm the current **branch** (and intended ref) and prefer giving the user exact commands to run themselves unless they asked the agent to run git.
+- When a prompt is **ambiguous or underspecified** for implementation, **ask clarifying questions before** making code or file changes.
+- **Task scope:** Only add, edit, or remove code **that the current prompt is specifically about**—nothing else. “While you’re there” refactors, drive-by cleanups, and removing debug prints or personal bookmarks are out of scope **unless** the user asked. If it is unclear whether a line or file is in scope, **ask** before changing it.
+- Do not remove `// %HERE ...` (or similar) location bookmarks the user left in files; they are intentional navigation aids unless the user explicitly asked to clear them. Do not strip `test.only` / `describe.only`, commented-out experiments, or `console.log` traces unless the user **explicitly** asked to remove or change them.
