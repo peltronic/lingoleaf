@@ -10,19 +10,19 @@
       extract_phrases: [
         {
           type: "idioms",
-          min_length: 4,
-          max_length: 10,
+          min_length: 2,
+          max_length: 4,
         },
-        {
-          type: "phrases_with_patterns",
-          patterns: [
-            {
-              pattern: "(?:m'attendais|y étais allée)",
-              min_matches: 2,
-              ignore_case: true,
-            },
-          ],
-        },
+        //{
+        //  type: "phrases_with_patterns",
+        //  patterns: [
+        //    {
+        //      pattern: "(?:m'attendais|y étais allée)",
+        //      min_matches: 2,
+        //      ignore_case: true,
+        //    },
+        //  ],
+        //},
       ],
       output_format: "list",
     }

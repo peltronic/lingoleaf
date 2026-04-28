@@ -111,13 +111,9 @@
             content: JSON.stringify(promptPayload),
             temperature: 0.1,
           })
-          const parsed = segmentUtils.postProcessIdentifyIdiomsResponse(
-            idiomCount,
-            MERGE_MAX_SPAN,
-          )
+          const parsed = segmentUtils.postProcessIdentifyIdiomsResponse(idiomCount, MERGE_MAX_SPAN)
           const cap = Math.min(MERGE_MAX_SPAN, window.length)
-          count =
-            parsed == null ? 1 : Math.min(Math.max(1, parsed), cap)
+          count = parsed == null ? 1 : Math.min(Math.max(1, parsed), cap)
         }
       } catch {
         count = 1
